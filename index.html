@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="cs">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Food Planner – Prototyp</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand-wrap">
+          <div class="brand-mark">FP</div>
+          <div>
+            <p class="brand-label">Domácí plánovač</p>
+            <h2>Food Planner</h2>
+          </div>
+        </div>
+
+        <nav class="nav" aria-label="Navigace">
+          <button class="nav-item active" type="button" data-view="overview">Přehled</button>
+          <button class="nav-item" type="button" data-view="foods">Jídla</button>
+          <button class="nav-item" type="button" data-view="overview">Týdenní plán</button>
+          <button class="nav-item" type="button" data-view="freezer">Mrazák</button>
+          <button class="nav-item" type="button" data-view="stock">Zásoby</button>
+          <button class="nav-item" type="button" data-view="overview">Nastavení</button>
+        </nav>
+
+        <div class="sidebar-note">
+          <span class="status-dot"></span>
+          Prototyp bez databáze
+        </div>
+      </aside>
+
+      <main class="content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Týdny</p>
+            <h1>Plánování týdnů</h1>
+          </div>
+
+          <div class="topbar-actions">
+            <button id="prevWeekBtn" class="secondary" type="button">Předchozí</button>
+            <button id="todayWeekBtn" class="secondary" type="button">Dnes</button>
+            <button id="nextWeekBtn" class="primary" type="button">Další</button>
+          </div>
+        </header>
+
+        <div class="main-grid">
+          <section class="planner-panel card">
+            <div class="view-panel" data-view-panel="overview">
+              <div class="section-header">
+                <h2>Plán týdnů</h2>
+              </div>
+
+              <div id="weekPlan" class="week-grid" aria-live="polite"></div>
+            </div>
+
+            <div class="view-panel hidden" data-view-panel="foods">
+              <div class="section-header">
+                <h2>Seznam jídel</h2>
+              </div>
+
+              <div class="filter-bar">
+                <label class="search-field">
+                  <span>Vyhledat jídlo</span>
+                  <input id="foodSearch" type="search" placeholder="Hledat podle názvu nebo kategorie" />
+                </label>
+              </div>
+
+              <ul id="foodCatalog" class="list catalog-list" aria-live="polite"></ul>
+            </div>
+
+            <div class="view-panel hidden" data-view-panel="freezer">
+              <div class="section-header">
+                <h2>Mrazák</h2>
+              </div>
+
+              <form id="freezerForm" class="mini-form compact-form">
+                <div class="inline-fields">
+                  <label>
+                    <span>Nadkategorie</span>
+                    <select id="freezerSupercategory">
+                      <option value="">Všechny</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Kategorie</span>
+                    <select id="freezerCategory">
+                      <option value="">Všechny</option>
+                    </select>
+                  </label>
+                </div>
+                <div class="inline-fields">
+                  <label>
+                    <span>Podkategorie</span>
+                    <select id="freezerSubcategory">
+                      <option value="">Všechny</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Hledat</span>
+                    <input id="freezerSearch" type="search" placeholder="Vyhledat jídlo" />
+                  </label>
+                </div>
+
+                <div id="freezerFoodList" class="food-picker-list compact-list"></div>
+
+                <label>
+                  <span>Vybrané jídlo</span>
+                  <input name="freezerName" type="text" placeholder="Vyberte jídlo níže" />
+                </label>
+                <input name="freezerFoodId" type="hidden" value="" />
+
+                <div class="inline-fields">
+                  <label>
+                    <span>Množství</span>
+                    <input name="freezerQuantity" type="number" min="0" step="1" value="1" />
+                  </label>
+                  <label>
+                    <span>Jednotka</span>
+                    <input name="freezerUnit" type="text" value="porce" placeholder="porce" />
+                  </label>
+                </div>
+                <button class="primary" type="submit">Přidat do mrazáku</button>
+              </form>
+
+              <ul id="freezerList" class="list compact"></ul>
+            </div>
+
+            <div class="view-panel hidden" data-view-panel="stock">
+              <div class="section-header">
+                <h2>Zásoby</h2>
+              </div>
+
+              <form id="stockForm" class="mini-form compact-form">
+                <label>
+                  <span>Název ingredience</span>
+                  <input name="stockName" type="text" placeholder="Např. Mleté maso" />
+                </label>
+                <div class="inline-fields">
+                  <label>
+                    <span>Množství</span>
+                    <input name="stockQuantity" type="number" min="0" step="0.1" value="1" />
+                  </label>
+                  <label>
+                    <span>Jednotka</span>
+                    <input name="stockUnit" type="text" value="kg" placeholder="kg" />
+                  </label>
+                </div>
+                <div class="inline-fields">
+                  <label>
+                    <span>Datum spotřeby</span>
+                    <input name="stockExpiresAt" type="date" />
+                  </label>
+                  <label>
+                    <span>Kategorie</span>
+                    <input name="stockCategory" type="text" placeholder="Maso" />
+                  </label>
+                </div>
+                <button class="primary" type="submit">Přidat zásobu</button>
+              </form>
+
+              <ul id="stockList" class="list compact"></ul>
+            </div>
+          </section>
+
+          <aside class="side-panel">
+            <section class="card">
+              <div class="section-header small">
+                <h3>Přidat nové jídlo</h3>
+              </div>
+
+              <form id="foodForm" class="mini-form">
+                <label>
+                  <span>Název jídla</span>
+                  <input id="foodName" type="text" placeholder="Např. Lasagne" />
+                </label>
+                <label>
+                  <span>Nadkategorie</span>
+                  <select id="foodSupercategory" aria-label="Vyber nadkategorii jídla"></select>
+                </label>
+                <label>
+                  <span>Kategorie</span>
+                  <input id="foodCategory" type="text" placeholder="Např. s rýží" />
+                </label>
+                <label>
+                  <span>Podkategorie</span>
+                  <input id="foodSubcategory" type="text" placeholder="Volitelné" />
+                </label>
+                <button class="primary" type="submit">Přidat do katalogu</button>
+              </form>
+            </section>
+          </aside>
+        </div>
+      </main>
+    </div>
+
+    <div id="foodPickerModal" class="modal hidden" aria-hidden="true">
+      <div class="modal-backdrop" data-close-picker="true"></div>
+      <div class="modal-dialog" role="dialog" aria-modal="true" aria-labelledby="foodPickerTitle">
+        <div class="modal-header">
+          <div>
+            <p class="eyebrow">Vyber jídlo</p>
+            <h3 id="foodPickerTitle">Vyberte jídlo pro slot</h3>
+          </div>
+          <button class="icon-btn" type="button" data-close-picker="true" aria-label="Zavřít výběr jídla">✕</button>
+        </div>
+
+        <div class="modal-filters">
+          <label>
+            <span>Nadkategorie</span>
+            <select id="foodPickerSupercategory"></select>
+          </label>
+          <label>
+            <span>Kategorie</span>
+            <select id="foodPickerCategory"></select>
+          </label>
+          <label>
+            <span>Podkategorie</span>
+            <select id="foodPickerSubcategory"></select>
+          </label>
+          <label class="search-field">
+            <span>Hledat</span>
+            <input id="foodPickerSearch" type="search" placeholder="Vyhledat jídlo podle názvu" />
+          </label>
+        </div>
+
+        <div id="foodPickerList" class="food-picker-list" aria-live="polite"></div>
+
+        <div class="modal-actions">
+          <button class="secondary" type="button" data-close-picker="true">Zavřít</button>
+          <button class="ghost-btn" type="button" id="clearFoodSelectionBtn">Vymazat výběr</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+    <script>
+      async function ensureAccess() {
+        const response = await fetch('/api/config');
+        const config = await response.json();
+
+        if (!config.supabaseUrl || !config.supabasePublishableKey) {
+          window.location.href = '/login.html';
+          return;
+        }
+
+        const supabase = window.supabase.createClient(config.supabaseUrl, config.supabasePublishableKey, {
+          auth: {
+            persistSession: true,
+            autoRefreshToken: true,
+            detectSessionInUrl: true
+          }
+        });
+
+        const { data: { session } } = await supabase.auth.getSession();
+
+        if (!session) {
+          window.location.href = '/login.html';
+          return;
+        }
+
+        const accessCheck = await fetch('/api/access-check', {
+          headers: {
+            Authorization: `Bearer ${session.access_token}`
+          }
+        });
+
+        if (!accessCheck.ok) {
+          await supabase.auth.signOut();
+          window.location.href = '/login.html';
+        }
+      }
+
+      ensureAccess();
+    </script>
+    <script src="app.js"></script>
+  </body>
+</html>
