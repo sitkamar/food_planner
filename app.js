@@ -120,8 +120,14 @@ function addInventoryItem(list, item) {
   return nextList;
 }
 
-function updateInventoryQuantity(list, itemId, delta) {
+function getInventoryStep(inventoryType = 'freezer') {
+  return inventoryType === 'stock' ? 0.1 : 1;
+}
+
+function updateInventoryQuantity(list, itemId, delta, inventoryType = 'freezer') {
   const numericDelta = Number(delta || 0);
+  const step = getInventoryStep(inventoryType);
+  const safeDelta = Number.isFinite(numericDelta) && Math.abs(numericDelta) > 0 ? numericDelta : step;
 
   return (Array.isArray(list) ? list : []).map((item) => {
     if (Number(item.id) !== Number(itemId)) {
@@ -129,9 +135,34 @@ function updateInventoryQuantity(list, itemId, delta) {
     }
 
     const baseQuantity = Number(item.quantity ?? 0);
-    const nextQuantity = Math.max(0, baseQuantity + numericDelta);
-    return { ...item, quantity: Number.isFinite(nextQuantity) ? nextQuantity : 0 };
+    const nextQuantity = Math.max(0, baseQuantity + safeDelta);
+    return { ...item, quantity: Number.isFinite(nextQuantity) ? Number(nextQuantity.toFixed(1)) : 0 };
   });
+}
+
+function findInventoryItemByReference(list, itemId, targetNode = null) {
+  const normalizedId = String(itemId ?? '').trim();
+  const matchById = (Array.isArray(list) ? list : []).find((item) => String(item.id) === normalizedId);
+
+  if (matchById) {
+    return matchById;
+  }
+
+  if (!targetNode || typeof targetNode.closest !== 'function') {
+    return null;
+  }
+
+  const itemRow = targetNode.closest('li');
+  if (!itemRow) {
+    return null;
+  }
+
+  const label = itemRow.querySelector('strong')?.textContent?.trim() || '';
+  if (!label) {
+    return null;
+  }
+
+  return (Array.isArray(list) ? list : []).find((item) => String(item.name || '').trim() === label) || null;
 }
 
 function getInventorySummary(inventoryState = {}) {
@@ -285,6 +316,30 @@ function serializeWeekForServer(week) {
       };
     });
   });
+}
+
+function buildFoodSubmissionPayload(input = {}) {
+  const name = String(input.name || '').trim();
+  const supercategory = String(input.supercategory || '').trim() || 'Hlavní jídlo';
+  const category = String(input.category || '').trim() || 'vlastní';
+  const subcategory = String(input.subcategory || '').trim();
+  const foodType = String(input.foodType || input.food_type_name || '').trim();
+
+  const payload = {
+    name,
+    supercategory,
+    category
+  };
+
+  if (subcategory) {
+    payload.subcategory = subcategory;
+  }
+
+  if (foodType) {
+    payload.food_type_name = foodType;
+  }
+
+  return payload;
 }
 
 async function saveWeekPlan(week) {
@@ -792,6 +847,37 @@ function renderFreezerList() {
         .join('')
     : '<li><div><strong>Žádné zbytky</strong><br /><small>V mrazáku zatím není nic uloženo.</small></div></li>';
 
+  if (typeof freezerListEl.querySelectorAll === 'function') {
+    freezerListEl.querySelectorAll('.inventory-qty-btn').forEach((button) => {
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const target = event.currentTarget || button;
+        const inventoryType = String(target.dataset.inventoryType || 'freezer');
+        const action = String(target.dataset.inventoryAction || '');
+        const itemId = String(target.dataset.itemId || '');
+        const sourceList = inventoryType === 'freezer' ? freezerItems : stockItems;
+        const item = findInventoryItemByReference(sourceList, itemId, target);
+
+        if (!item || !action || !inventoryType) {
+          return;
+        }
+
+        if (action === 'increment') {
+          const next = updateInventoryQuantity(sourceList, item.id, getInventoryStep(inventoryType), inventoryType);
+          sourceList.splice(0, sourceList.length, ...next);
+          persistInventoryState();
+          return;
+        }
+
+        if (action === 'decrement') {
+          const next = updateInventoryQuantity(sourceList, item.id, -getInventoryStep(inventoryType), inventoryType);
+          sourceList.splice(0, sourceList.length, ...next);
+          persistInventoryState();
+        }
+      });
+    });
+  }
+
   renderInventorySummary();
 }
 
@@ -818,6 +904,37 @@ function renderStockList() {
         )
         .join('')
     : '<li><div><strong>Žádné zásoby</strong><br /><small>Nemáte zatím žádné trvanlivé ingredience.</small></div></li>';
+
+  if (typeof stockListEl.querySelectorAll === 'function') {
+    stockListEl.querySelectorAll('.inventory-qty-btn').forEach((button) => {
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const target = event.currentTarget || button;
+        const inventoryType = String(target.dataset.inventoryType || 'stock');
+        const action = String(target.dataset.inventoryAction || '');
+        const itemId = String(target.dataset.itemId || '');
+        const sourceList = inventoryType === 'freezer' ? freezerItems : stockItems;
+        const item = findInventoryItemByReference(sourceList, itemId, target);
+
+        if (!item || !action || !inventoryType) {
+          return;
+        }
+
+        if (action === 'increment') {
+          const next = updateInventoryQuantity(sourceList, item.id, getInventoryStep(inventoryType), inventoryType);
+          sourceList.splice(0, sourceList.length, ...next);
+          persistInventoryState();
+          return;
+        }
+
+        if (action === 'decrement') {
+          const next = updateInventoryQuantity(sourceList, item.id, -getInventoryStep(inventoryType), inventoryType);
+          sourceList.splice(0, sourceList.length, ...next);
+          persistInventoryState();
+        }
+      });
+    });
+  }
 
   renderInventorySummary();
 }
@@ -879,11 +996,19 @@ function matchesFilterValue(actualValue, expectedValue) {
     return false;
   }
 
-  return valueA === valueB
-    || valueA.includes(valueB)
-    || valueB.includes(valueA)
-    || valueA.startsWith(`${valueB} `)
-    || valueB.startsWith(`${valueA} `);
+  if (valueA === valueB) {
+    return true;
+  }
+
+  const tokensA = valueA.split(/\s+/).filter(Boolean);
+  const tokensB = valueB.split(/\s+/).filter(Boolean);
+
+  if (!tokensA.length || !tokensB.length) {
+    return false;
+  }
+
+  return tokensB.every((token) => tokensA.includes(token))
+    || tokensA.every((token) => tokensB.includes(token));
 }
 
 function filterFoodSelectionOptions(foods, filters = {}) {
@@ -1223,7 +1348,7 @@ navButtons.forEach((button) => {
   });
 });
 
-foodForm.addEventListener('submit', (event) => {
+foodForm.addEventListener('submit', async (event) => {
   event.preventDefault();
 
   const name = document.getElementById('foodName').value.trim();
@@ -1237,25 +1362,63 @@ foodForm.addEventListener('submit', (event) => {
     return;
   }
 
-  foodCatalog.unshift({
-    id: Date.now(),
+  const payload = buildFoodSubmissionPayload({
     name,
     supercategory,
-    foodType,
-    category: category || 'vlastní',
-    subcategory: subcategory || null,
-    fullLabel: [supercategory, category, subcategory].filter(Boolean).join(' · ') || 'vlastní',
-    classification: [supercategory, category, subcategory].filter(Boolean).join(' / ') || 'vlastní'
+    category,
+    subcategory,
+    foodType
   });
 
-  renderFoodCatalog();
-  renderWeekPlan();
-  foodForm.reset();
-  document.getElementById('foodName').focus();
+  try {
+    const response = await fetch('/api/foods', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(payload)
+    });
 
-  const fallbackValue = availableSupercategories[0]?.name || 'Hlavní jídlo';
-  if (foodSupercategorySelect) {
-    foodSupercategorySelect.value = fallbackValue;
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(result.message || 'Nepodařilo se uložit jídlo do databáze.');
+    }
+
+    const savedFood = result.item || {
+      id: result.id || Date.now(),
+      name: payload.name,
+      supercategory: payload.supercategory,
+      category: payload.category,
+      subcategory: payload.subcategory || null,
+      foodType: payload.food_type_name || payload.supercategory,
+      fullLabel: [payload.supercategory, payload.category, payload.subcategory].filter(Boolean).join(' · ') || 'vlastní',
+      classification: [payload.supercategory, payload.category, payload.subcategory].filter(Boolean).join(' / ') || 'vlastní'
+    };
+
+    foodCatalog.unshift({
+      id: savedFood.id,
+      name: savedFood.name,
+      supercategory: savedFood.supercategory || payload.supercategory,
+      foodType: savedFood.foodType || savedFood.food_type_name || payload.food_type_name || payload.supercategory,
+      category: savedFood.category || payload.category,
+      subcategory: savedFood.subcategory || payload.subcategory || null,
+      fullLabel: savedFood.fullLabel || [savedFood.supercategory || payload.supercategory, savedFood.category || payload.category, savedFood.subcategory || payload.subcategory].filter(Boolean).join(' · ') || 'vlastní',
+      classification: savedFood.classification || [savedFood.supercategory || payload.supercategory, savedFood.category || payload.category, savedFood.subcategory || payload.subcategory].filter(Boolean).join(' / ') || 'vlastní'
+    });
+
+    renderFoodCatalog();
+    renderWeekPlan();
+    foodForm.reset();
+    document.getElementById('foodName').focus();
+
+    const fallbackValue = availableSupercategories[0]?.name || 'Hlavní jídlo';
+    if (foodSupercategorySelect) {
+      foodSupercategorySelect.value = fallbackValue;
+    }
+  } catch (error) {
+    console.error('Chyba při ukládání nového jídla:', error);
+    window.alert(error.message || 'Nepodařilo se uložit jídlo do databáze.');
   }
 });
 
@@ -1484,7 +1647,7 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
     }
 
     const inventoryType = String(button.dataset.inventoryType || '');
-    const itemId = button.dataset.itemId;
+    const itemId = String(button.dataset.itemId || '');
     const action = button.dataset.inventoryAction;
 
     if (!inventoryType || !itemId || !action) {
@@ -1492,29 +1655,32 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
     }
 
     const sourceList = inventoryType === 'freezer' ? freezerItems : stockItems;
-    const index = sourceList.findIndex((item) => String(item.id) === String(itemId));
+    const item = findInventoryItemByReference(sourceList, itemId, button);
 
-    if (index < 0) {
+    if (!item) {
       return;
     }
 
     if (action === 'increment') {
-      const next = updateInventoryQuantity(sourceList, itemId, 1);
+      const next = updateInventoryQuantity(sourceList, item.id, getInventoryStep(inventoryType), inventoryType);
       sourceList.splice(0, sourceList.length, ...next);
       persistInventoryState();
       return;
     }
 
     if (action === 'decrement') {
-      const next = updateInventoryQuantity(sourceList, itemId, -1);
+      const next = updateInventoryQuantity(sourceList, item.id, -getInventoryStep(inventoryType), inventoryType);
       sourceList.splice(0, sourceList.length, ...next);
       persistInventoryState();
       return;
     }
 
     if (action === 'delete') {
-      sourceList.splice(index, 1);
-      persistInventoryState();
+      const index = sourceList.findIndex((stockItem) => String(stockItem.id) === String(item.id));
+      if (index >= 0) {
+        sourceList.splice(index, 1);
+        persistInventoryState();
+      }
     }
   });
 }
@@ -1546,7 +1712,9 @@ if (typeof module !== 'undefined' && module.exports) {
     resolveFoodPickerFilterState,
     addInventoryItem,
     updateInventoryQuantity,
+    getInventoryStep,
     getInventorySummary,
+    buildFoodSubmissionPayload,
     weekPlanData
   };
 }

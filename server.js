@@ -259,6 +259,36 @@ app.get('/api/supercategories', async (req, res) => {
   }
 });
 
+function inferFoodTypeName(supercategoryName = '') {
+  const normalized = String(supercategoryName || '').trim().toLowerCase();
+
+  if (!normalized) {
+    return 'Hlavní jídlo';
+  }
+
+  if (normalized.includes('snid') || normalized.includes('breakfast')) {
+    return 'Snídaně';
+  }
+
+  if (normalized.includes('hlavn') || normalized.includes('main')) {
+    return 'Hlavní jídlo';
+  }
+
+  if (normalized.includes('snack') || normalized.includes('svac')) {
+    return 'Snack';
+  }
+
+  if (normalized.includes('nevar') || normalized.includes('non') || normalized.includes('out')) {
+    return 'Nevaření';
+  }
+
+  if (normalized.includes('prilo') || normalized.includes('side')) {
+    return 'Příloha';
+  }
+
+  return 'Hlavní jídlo';
+}
+
 app.get('/api/foods', async (req, res) => {
   try {
     const [foodsResult, categoriesResult, supercategoriesResult, subcategoriesResult, typesResult] = await Promise.all([
@@ -312,6 +342,167 @@ app.get('/api/foods', async (req, res) => {
     res.status(500).json({
       ok: false,
       message: 'Nepodařilo se načíst jídla z databáze.',
+      details: error.message || 'Neznámá chyba databáze.'
+    });
+  }
+});
+
+app.post('/api/foods', async (req, res) => {
+  if (!supabaseAdmin) {
+    return res.status(503).json({ ok: false, message: 'Chybí konfigurace Supabase.' });
+  }
+
+  try {
+    const name = String(req.body?.name || '').trim();
+    const supercategory = String(req.body?.supercategory || '').trim() || 'Hlavní jídlo';
+    const category = String(req.body?.category || '').trim() || 'vlastní';
+    const subcategory = String(req.body?.subcategory || '').trim();
+    const foodTypeName = String(req.body?.food_type_name || '').trim() || inferFoodTypeName(supercategory);
+
+    if (!name) {
+      return res.status(400).json({ ok: false, message: 'Název jídla je povinný.' });
+    }
+
+    const normalizedSupercategory = supercategory.trim();
+    const normalizedCategory = category.trim();
+    const normalizedSubcategory = subcategory.trim();
+
+    let { data: typeRow, error: typeError } = await supabaseAdmin
+      .from('food_types')
+      .select('id')
+      .eq('name', foodTypeName)
+      .maybeSingle();
+
+    if (typeError) {
+      throw typeError;
+    }
+
+    if (!typeRow) {
+      const { data: insertedType, error: insertTypeError } = await supabaseAdmin
+        .from('food_types')
+        .insert([{ name: foodTypeName }])
+        .select('id')
+        .single();
+
+      if (insertTypeError) {
+        throw insertTypeError;
+      }
+
+      typeRow = insertedType;
+    }
+
+    let { data: supercategoryRow, error: supercategoryError } = await supabaseAdmin
+      .from('food_supercategories')
+      .select('id')
+      .eq('name', normalizedSupercategory)
+      .maybeSingle();
+
+    if (supercategoryError) {
+      throw supercategoryError;
+    }
+
+    if (!supercategoryRow) {
+      const { data: insertedSupercategory, error: insertSupercategoryError } = await supabaseAdmin
+        .from('food_supercategories')
+        .insert([{ name: normalizedSupercategory, food_type_id: typeRow.id }])
+        .select('id')
+        .single();
+
+      if (insertSupercategoryError) {
+        throw insertSupercategoryError;
+      }
+
+      supercategoryRow = insertedSupercategory;
+    }
+
+    let { data: categoryRow, error: categoryError } = await supabaseAdmin
+      .from('food_categories')
+      .select('id')
+      .eq('supercategory_id', supercategoryRow.id)
+      .eq('name', normalizedCategory)
+      .maybeSingle();
+
+    if (categoryError) {
+      throw categoryError;
+    }
+
+    if (!categoryRow) {
+      const { data: insertedCategory, error: insertCategoryError } = await supabaseAdmin
+        .from('food_categories')
+        .insert([{ name: normalizedCategory, supercategory_id: supercategoryRow.id }])
+        .select('id')
+        .single();
+
+      if (insertCategoryError) {
+        throw insertCategoryError;
+      }
+
+      categoryRow = insertedCategory;
+    }
+
+    let subcategoryId = null;
+    if (normalizedSubcategory) {
+      let { data: subcategoryRow, error: subcategoryError } = await supabaseAdmin
+        .from('food_subcategories')
+        .select('id')
+        .eq('category_id', categoryRow.id)
+        .eq('name', normalizedSubcategory)
+        .maybeSingle();
+
+      if (subcategoryError) {
+        throw subcategoryError;
+      }
+
+      if (!subcategoryRow) {
+        const { data: insertedSubcategory, error: insertSubcategoryError } = await supabaseAdmin
+          .from('food_subcategories')
+          .insert([{ name: normalizedSubcategory, category_id: categoryRow.id }])
+          .select('id')
+          .single();
+
+        if (insertSubcategoryError) {
+          throw insertSubcategoryError;
+        }
+
+        subcategoryRow = insertedSubcategory;
+      }
+
+      subcategoryId = subcategoryRow.id;
+    }
+
+    const { data: insertedFood, error: insertFoodError } = await supabaseAdmin
+      .from('foods')
+      .insert([{
+        name,
+        supercategory_id: supercategoryRow.id,
+        category_id: categoryRow.id,
+        subcategory_id: subcategoryId,
+        is_active: true
+      }])
+      .select('id, name, is_active, supercategory_id, category_id, subcategory_id')
+      .single();
+
+    if (insertFoodError) {
+      throw insertFoodError;
+    }
+
+    const item = {
+      id: insertedFood.id,
+      name: insertedFood.name,
+      supercategory: normalizedSupercategory,
+      category: normalizedCategory,
+      subcategory: normalizedSubcategory || null,
+      foodType: foodTypeName,
+      classification: [normalizedSupercategory, normalizedCategory, normalizedSubcategory].filter(Boolean).join(' / '),
+      fullLabel: [normalizedSupercategory, normalizedCategory, normalizedSubcategory].filter(Boolean).join(' · ')
+    };
+
+    return res.json({ ok: true, item, message: 'Jídlo bylo uloženo do katalogu.' });
+  } catch (error) {
+    console.error('Chyba při vytváření jídla v katalogu:', error);
+    return res.status(500).json({
+      ok: false,
+      message: 'Nepodařilo se uložit jídlo do databáze.',
       details: error.message || 'Neznámá chyba databáze.'
     });
   }
@@ -465,6 +656,11 @@ app.post('/api/weekly-plans', async (req, res) => {
       .filter(Boolean);
 
     const foodNameMap = new Map();
+    const validFoodIds = [...new Set(
+      slotRows
+        .map((slot) => Number(slot?.food_id))
+        .filter((value) => Number.isFinite(value) && value > 0)
+    )];
 
     if (validFoods.length) {
       const { data: foodRows, error: foodRowsError } = await supabaseAdmin
@@ -479,6 +675,20 @@ app.post('/api/weekly-plans', async (req, res) => {
       (foodRows || []).forEach((food) => {
         foodNameMap.set(String(food.name).trim().toLowerCase(), food.id);
       });
+    }
+
+    const knownFoodIds = new Set();
+    if (validFoodIds.length) {
+      const { data: existingFoodRows, error: existingFoodRowsError } = await supabaseAdmin
+        .from('foods')
+        .select('id')
+        .in('id', validFoodIds);
+
+      if (existingFoodRowsError) {
+        throw existingFoodRowsError;
+      }
+
+      (existingFoodRows || []).forEach((food) => knownFoodIds.add(Number(food.id)));
     }
 
     await supabaseAdmin
@@ -496,7 +706,8 @@ app.post('/api/weekly-plans', async (req, res) => {
           return null;
         }
 
-        const resolvedFoodId = Number.isFinite(candidateFoodId) && candidateFoodId > 0
+        const hasValidFoodId = Number.isFinite(candidateFoodId) && candidateFoodId > 0 && knownFoodIds.has(candidateFoodId);
+        const resolvedFoodId = hasValidFoodId
           ? candidateFoodId
           : foodNameMap.get(foodName.toLowerCase());
 

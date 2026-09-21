@@ -85,6 +85,11 @@ Tento soubor je hlavním zdrojem pravdy o projektu. Všechny důležité rozhodn
 - Kontext: Projekt potřebuje nejen frontendové záznamy, ale i SQL definici pro pozdější provoz v Supabase nebo SQLite.
 - Důvod: Tím je zachována logika domácí evidence: zbytky jídel mají katalogový odkaz, trvanlivé ingredience ne.
 
+### 2026-09-21 – Ukládání nových jídel do katalogu přes server
+- Rozhodnutí: Při přidání nového jídla v katalogu se data ukládají přes API endpoint `/api/foods`, který vytváří nebo hledá správnou superkategorii, kategorii a typ jídla v databázi a udržuje vazbu na `foods`.
+- Kontext: Frontend si jídlo přidal pouze lokálně v rozhraní, ale nebylo to skutečně persistováno do databáze Supabase.
+- Důvod: Katalog jídel má být plně uložený a obnovitelný, nikoliv jen krátkodobě zobrazený v prohlížeči.
+
 ## 3. Záznam změn
 - Všechny navržené úpravy se zapisují sem, a to i v případě, že jsou pouze v prototypové fázi.
 - Poté, co je rozhodnutí přijato, je považováno za platné pro další vývoj.

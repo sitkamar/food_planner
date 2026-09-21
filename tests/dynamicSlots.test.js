@@ -85,7 +85,9 @@ const {
   resolveFoodPickerFilterState,
   addInventoryItem,
   updateInventoryQuantity,
+  getInventoryStep,
   getInventorySummary,
+  buildFoodSubmissionPayload,
   weekPlanData
 } = require('../app.js');
 
@@ -302,6 +304,40 @@ test('filtr rozlišuje název a třídy jídla i při detailních superkategori�
   assert.deepEqual(filtered.map((food) => food.name), ['Banánové ovesné vločky']);
 });
 
+test('filtr nerozlišuje podobné kategorie podle podřetězce', () => {
+  const foods = [
+    { name: 'Pancakes', supercategory: 'Snídaně - sladké', category: 'Pancakes', subcategory: null },
+    { name: 'Cakes', supercategory: 'Snídaně - sladké', category: 'Cakes', subcategory: null },
+    { name: 'Ovesná kaše', supercategory: 'Snídaně - sladké', category: 'oves', subcategory: 'banán' }
+  ];
+
+  const filtered = filterFoodSelectionOptions(foods, {
+    supercategory: 'Snídaně',
+    category: 'Cakes',
+    query: ''
+  });
+
+  assert.deepEqual(filtered.map((food) => food.name), ['Cakes']);
+});
+
+test('přidání jídla do katalogu odesílá všechny potřebné hodnoty na server', () => {
+  const payload = buildFoodSubmissionPayload({
+    name: 'Jablečný koláč',
+    supercategory: 'Snídaně - sladké',
+    category: 'Cakes',
+    subcategory: 'ovoce',
+    foodType: 'Snídaně'
+  });
+
+  assert.deepEqual(payload, {
+    name: 'Jablečný koláč',
+    supercategory: 'Snídaně - sladké',
+    category: 'Cakes',
+    subcategory: 'ovoce',
+    food_type_name: 'Snídaně'
+  });
+});
+
 test('vyšší filtr omezuje nižší filtry a ruší neplatné hodnoty', () => {
   const foods = [
     { name: 'Ovesná kaše', supercategory: 'Snídaně - sladké', category: 'oves', subcategory: 'banán' },
@@ -361,6 +397,11 @@ test('po posunu do jiného týdne se načtou uložená jídla pro daný týden',
   assert.equal(targetWeek.items.breakfast_1, 'Ovesná kaše');
   assert.equal(targetWeek.items.main_1, 'Kuřecí rizoto');
   assert.equal(targetWeek.items.snack_1, 'Jablko');
+});
+
+test('zásoby mění množství o 0,1 kg a mrazák o celé porce', () => {
+  assert.equal(getInventoryStep('stock'), 0.1);
+  assert.equal(getInventoryStep('freezer'), 1);
 });
 
 test('přidání a úprava množství v mrazáku a zásobách se počítá správně', () => {
