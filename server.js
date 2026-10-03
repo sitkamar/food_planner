@@ -173,6 +173,283 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
+async function ensureActiveBudget() {
+  if (!supabaseAdmin) {
+    return null;
+  }
+
+  const { data: latestBudget, error: latestError } = await supabaseAdmin
+    .from('budgets')
+    .select('*')
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (latestError && latestError.code !== 'PGRST116') {
+    throw latestError;
+  }
+
+  if (latestBudget) {
+    return latestBudget;
+  }
+
+  const { data: createdBudget, error: createError } = await supabaseAdmin
+    .from('budgets')
+    .insert([{
+      name: 'Domácí rozpočet',
+      currency: 'CZK',
+      is_active: true
+    }])
+    .select('*')
+    .single();
+
+  if (createError) {
+    throw createError;
+  }
+
+  return createdBudget;
+}
+
+app.get('/api/budget', async (req, res) => {
+  if (!supabaseAdmin) {
+    return res.status(503).json({ ok: false, message: 'Chybí konfigurace Supabase.' });
+  }
+
+  try {
+    const budget = await ensureActiveBudget();
+    const requestedMonth = String(req.query.month_key || req.query.monthKey || '').trim();
+
+    if (!budget) {
+      return res.status(500).json({ ok: false, message: 'Nepodařilo se vytvořit aktivní rozpočet.' });
+    }
+
+    const transactionsQuery = supabaseAdmin
+      .from('budget_transactions')
+      .select('*')
+      .eq('budget_id', budget.id)
+      .order('transaction_date', { ascending: false });
+
+    if (requestedMonth) {
+      transactionsQuery.eq('month_key', requestedMonth);
+    }
+
+    const [categoriesResult, transactionsResult] = await Promise.all([
+      supabaseAdmin
+        .from('budget_categories')
+        .select('*')
+        .eq('budget_id', budget.id)
+        .order('name', { ascending: true }),
+      transactionsQuery
+    ]);
+
+    if (categoriesResult.error && categoriesResult.error.code !== 'PGRST116') {
+      throw categoriesResult.error;
+    }
+
+    if (transactionsResult.error && transactionsResult.error.code !== 'PGRST116') {
+      throw transactionsResult.error;
+    }
+
+    return res.json({
+      ok: true,
+      budget,
+      categories: categoriesResult.data || [],
+      transactions: transactionsResult.data || []
+    });
+  } catch (error) {
+    console.error('Chyba při načítání rozpočtu z databáze:', error);
+    return res.status(500).json({
+      ok: false,
+      message: 'Nepodařilo se načíst rozpočet z databáze.',
+      details: error.message || 'Neznámá chyba databáze.'
+    });
+  }
+});
+
+app.post('/api/budget/categories', async (req, res) => {
+  if (!supabaseAdmin) {
+    return res.status(503).json({ ok: false, message: 'Chybí konfigurace Supabase.' });
+  }
+
+  try {
+    const budget = await ensureActiveBudget();
+    const name = String(req.body?.name || '').trim();
+    const type = req.body?.type === 'income' ? 'income' : 'expense';
+    const plannedAmount = Number(req.body?.planned_amount ?? req.body?.limit ?? 0);
+    const notes = String(req.body?.notes || '').trim();
+
+    if (!name) {
+      return res.status(400).json({ ok: false, message: 'Název kategorie je povinný.' });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('budget_categories')
+      .insert([{
+        budget_id: budget.id,
+        name,
+        type,
+        planned_amount: Number.isFinite(plannedAmount) ? plannedAmount : 0,
+        notes,
+        color: req.body?.color || '#2d7a5f'
+      }])
+      .select('*')
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return res.json({ ok: true, item: data });
+  } catch (error) {
+    console.error('Chyba při vkládání kategorie rozpočtu:', error);
+    return res.status(500).json({ ok: false, message: 'Nepodařilo se uložit kategorii rozpočtu.', details: error.message || 'Neznámá chyba databáze.' });
+  }
+});
+
+app.put('/api/budget/categories/:id', async (req, res) => {
+  if (!supabaseAdmin) {
+    return res.status(503).json({ ok: false, message: 'Chybí konfigurace Supabase.' });
+  }
+
+  try {
+    const budget = await ensureActiveBudget();
+    const name = String(req.body?.name || '').trim();
+    const type = req.body?.type === 'income' ? 'income' : 'expense';
+    const plannedAmount = Number(req.body?.planned_amount ?? req.body?.limit ?? 0);
+    const notes = String(req.body?.notes || '').trim();
+
+    const { data, error } = await supabaseAdmin
+      .from('budget_categories')
+      .update({
+        name,
+        type,
+        planned_amount: Number.isFinite(plannedAmount) ? plannedAmount : 0,
+        notes,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', req.params.id)
+      .eq('budget_id', budget.id)
+      .select('*')
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return res.json({ ok: true, item: data });
+  } catch (error) {
+    console.error('Chyba při aktualizaci kategorie rozpočtu:', error);
+    return res.status(500).json({ ok: false, message: 'Nepodařilo se upravit kategorii rozpočtu.', details: error.message || 'Neznámá chyba databáze.' });
+  }
+});
+
+app.post('/api/budget/transactions', async (req, res) => {
+  if (!supabaseAdmin) {
+    return res.status(503).json({ ok: false, message: 'Chybí konfigurace Supabase.' });
+  }
+
+  try {
+    const budget = await ensureActiveBudget();
+    const categoryId = req.body?.category_id ? String(req.body.category_id) : null;
+    const transactionType = req.body?.transaction_type === 'income' ? 'income' : 'expense';
+    const amount = Number(req.body?.amount ?? 0);
+    const date = String(req.body?.transaction_date || req.body?.date || new Date().toISOString().slice(0, 10));
+    const monthKey = String(req.body?.month_key || req.body?.monthKey || date.slice(0, 7));
+
+    if (!categoryId || !Number.isFinite(amount) || amount <= 0) {
+      return res.status(400).json({ ok: false, message: 'Neplatné údaje pro transakci.' });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('budget_transactions')
+      .insert([{
+        budget_id: budget.id,
+        category_id: categoryId,
+        month_key: monthKey,
+        transaction_type: transactionType,
+        amount,
+        transaction_date: date,
+        description: String(req.body?.description || '').trim(),
+        source: String(req.body?.source || '').trim()
+      }])
+      .select('*')
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return res.json({ ok: true, item: data });
+  } catch (error) {
+    console.error('Chyba při vkládání transakce rozpočtu:', error);
+    return res.status(500).json({ ok: false, message: 'Nepodařilo se uložit transakci rozpočtu.', details: error.message || 'Neznámá chyba databáze.' });
+  }
+});
+
+app.put('/api/budget/transactions/:id', async (req, res) => {
+  if (!supabaseAdmin) {
+    return res.status(503).json({ ok: false, message: 'Chybí konfigurace Supabase.' });
+  }
+
+  try {
+    const budget = await ensureActiveBudget();
+    const categoryId = req.body?.category_id ? String(req.body.category_id) : null;
+    const transactionType = req.body?.transaction_type === 'income' ? 'income' : 'expense';
+    const amount = Number(req.body?.amount ?? 0);
+    const date = String(req.body?.transaction_date || req.body?.date || new Date().toISOString().slice(0, 10));
+    const monthKey = String(req.body?.month_key || req.body?.monthKey || date.slice(0, 7));
+
+    const { data, error } = await supabaseAdmin
+      .from('budget_transactions')
+      .update({
+        category_id: categoryId,
+        month_key: monthKey,
+        transaction_type: transactionType,
+        amount,
+        transaction_date: date,
+        description: String(req.body?.description || '').trim(),
+        source: String(req.body?.source || '').trim()
+      })
+      .eq('id', req.params.id)
+      .eq('budget_id', budget.id)
+      .select('*')
+      .single();
+
+    if (error) {
+      throw error;
+    }
+
+    return res.json({ ok: true, item: data });
+  } catch (error) {
+    console.error('Chyba při aktualizaci transakce rozpočtu:', error);
+    return res.status(500).json({ ok: false, message: 'Nepodařilo se upravit transakci rozpočtu.', details: error.message || 'Neznámá chyba databáze.' });
+  }
+});
+
+app.delete('/api/budget/transactions/:id', async (req, res) => {
+  if (!supabaseAdmin) {
+    return res.status(503).json({ ok: false, message: 'Chybí konfigurace Supabase.' });
+  }
+
+  try {
+    const budget = await ensureActiveBudget();
+    const { error } = await supabaseAdmin
+      .from('budget_transactions')
+      .delete()
+      .eq('id', req.params.id)
+      .eq('budget_id', budget.id);
+
+    if (error) {
+      throw error;
+    }
+
+    return res.json({ ok: true, deleted: true });
+  } catch (error) {
+    console.error('Chyba při mazání transakce rozpočtu:', error);
+    return res.status(500).json({ ok: false, message: 'Nepodařilo se odstranit transakci rozpočtu.', details: error.message || 'Neznámá chyba databáze.' });
+  }
+});
+
 app.get('/api/access-check', async (req, res) => {
   if (!supabaseAdmin) {
     return res.status(503).json({ ok: false, message: 'Chybí konfigurace Supabase.' });

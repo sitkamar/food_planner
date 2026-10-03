@@ -17,18 +17,25 @@
           </div>
         </div>
 
-        <nav class="nav" aria-label="Navigace">
-          <button class="nav-item active" type="button" data-view="overview">Přehled</button>
-          <button class="nav-item" type="button" data-view="foods">Jídla</button>
-          <button class="nav-item" type="button" data-view="overview">Týdenní plán</button>
-          <button class="nav-item" type="button" data-view="freezer">Mrazák</button>
-          <button class="nav-item" type="button" data-view="stock">Zásoby</button>
-          <button class="nav-item" type="button" data-view="overview">Nastavení</button>
+        <nav class="nav module-nav" data-module-nav="foodplanner" aria-label="Navigace food planneru">
+          <button class="nav-item active" type="button" data-app="foodplanner" data-view="overview">Přehled</button>
+          <button class="nav-item" type="button" data-app="foodplanner" data-view="foods">Jídla</button>
+          <button class="nav-item" type="button" data-app="foodplanner" data-view="freezer">Mrazák</button>
+          <button class="nav-item" type="button" data-app="foodplanner" data-view="stock">Zásoby</button>
         </nav>
+
+        <nav class="nav module-nav hidden" data-module-nav="budget" aria-label="Navigace rozpočtu">
+          <button class="nav-item" type="button" data-app="budget" data-view="budget">Přehled rozpočtu</button>
+        </nav>
+
+        <div class="app-switcher" role="tablist" aria-label="Přepínání aplikací">
+          <button class="app-switch-btn active" type="button" data-app-switch="foodplanner">Food Planner</button>
+          <button class="app-switch-btn" type="button" data-app-switch="budget">Rozpočet</button>
+        </div>
 
         <div class="sidebar-note">
           <span class="status-dot"></span>
-          Prototyp bez databáze
+          Oddělená část pro domácnost
         </div>
       </aside>
 
@@ -162,6 +169,128 @@
               </form>
 
               <ul id="stockList" class="list compact"></ul>
+            </div>
+
+            <div class="view-panel hidden budget-section" data-view-panel="budget">
+              <div class="budget-header-block">
+                <div>
+                  <p class="eyebrow budget-eyebrow">Rozpočet domácnosti</p>
+                  <h2>Domácí rozpočet</h2>
+                </div>
+                <div class="budget-toolbar">
+                  <button id="budgetPrevMonthBtn" class="secondary" type="button">Předchozí</button>
+                  <label>
+                    <span>Měsíc</span>
+                    <select id="budgetMonthPicker"></select>
+                  </label>
+                  <button id="budgetNextMonthBtn" class="secondary" type="button">Další</button>
+                </div>
+              </div>
+
+              <div id="budgetSummaryCards" class="summary-strip budget-summary-strip"></div>
+
+              <div class="budget-grid">
+                <section class="card budget-card">
+                  <div class="section-header small">
+                    <h3>Rozpočet / kategorie</h3>
+                  </div>
+
+                  <form id="budgetCategoryForm" class="mini-form compact-form">
+                    <input id="budgetCategoryId" type="hidden" value="" />
+                    <label>
+                      <span>Název kategorie</span>
+                      <input id="budgetCategoryName" type="text" placeholder="Např. Jídlo" />
+                    </label>
+                    <div class="inline-fields">
+                      <label>
+                        <span>Typ</span>
+                        <select id="budgetCategoryType">
+                          <option value="expense">Výdaj</option>
+                          <option value="income">Příjem</option>
+                        </select>
+                      </label>
+                      <label>
+                        <span>Limit</span>
+                        <input id="budgetCategoryLimit" type="number" min="0" step="100" value="0" />
+                      </label>
+                    </div>
+                    <label>
+                      <span>Poznámka</span>
+                      <input id="budgetCategoryNotes" type="text" placeholder="Např. Potraviny" />
+                    </label>
+                    <button id="budgetCategorySubmitBtn" class="primary" type="submit">Přidat kategorii</button>
+                  </form>
+
+                  <ul id="budgetCategoryList" class="list compact"></ul>
+                </section>
+
+                <section class="card budget-card">
+                  <div class="section-header small">
+                    <h3>Transakce</h3>
+                  </div>
+
+                  <form id="budgetTransactionForm" class="mini-form compact-form">
+                    <input id="budgetTransactionId" type="hidden" value="" />
+                    <div class="inline-fields">
+                      <label>
+                        <span>Datum</span>
+                        <input id="budgetTransactionDate" type="date" />
+                      </label>
+                      <label>
+                        <span>Typ</span>
+                        <select id="budgetTransactionType">
+                          <option value="expense">Výdaj</option>
+                          <option value="income">Příjem</option>
+                        </select>
+                      </label>
+                    </div>
+                    <label>
+                      <span>Kategorie</span>
+                      <select id="budgetTransactionCategory"></select>
+                    </label>
+                    <div class="inline-fields">
+                      <label>
+                        <span>Částka</span>
+                        <input id="budgetTransactionAmount" type="number" min="0" step="100" value="0" />
+                      </label>
+                      <label>
+                        <span>Zdroj</span>
+                        <input id="budgetTransactionSource" type="text" placeholder="Např. Albert" />
+                      </label>
+                    </div>
+                    <label>
+                      <span>Popis</span>
+                      <input id="budgetTransactionDescription" type="text" placeholder="Např. Nákup potravin" />
+                    </label>
+                    <button id="budgetTransactionSubmitBtn" class="primary" type="submit">Zapsat transakci</button>
+                  </form>
+
+                  <ul id="budgetTransactionList" class="list compact"></ul>
+                </section>
+              </div>
+
+              <div class="budget-analytics">
+                <section class="card budget-chart-card">
+                  <div class="section-header small">
+                    <h3>Využití podle kategorie</h3>
+                  </div>
+                  <div id="budgetChart" class="budget-chart"></div>
+                </section>
+
+                <section class="card budget-alerts-card">
+                  <div class="section-header small">
+                    <h3>Upozornění</h3>
+                  </div>
+                  <ul id="budgetAlertList" class="list alert-list"></ul>
+                </section>
+              </div>
+
+              <section class="card budget-trend-card">
+                <div class="section-header small">
+                  <h3>Vývoj napříč měsíci</h3>
+                </div>
+                <div id="budgetTrendChart" class="budget-trend-chart"></div>
+              </section>
             </div>
           </section>
 

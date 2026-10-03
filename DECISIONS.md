@@ -90,6 +90,21 @@ Tento soubor je hlavním zdrojem pravdy o projektu. Všechny důležité rozhodn
 - Kontext: Frontend si jídlo přidal pouze lokálně v rozhraní, ale nebylo to skutečně persistováno do databáze Supabase.
 - Důvod: Katalog jídel má být plně uložený a obnovitelný, nikoliv jen krátkodobě zobrazený v prohlížeči.
 
+### 2026-09-29 – Rozšíření o samostatný modul měsíčního rozpočtu
+- Rozhodnutí: Aplikace bude rozšířena o samostatnou sekci Rozpočet, která pracuje s měsíčním plánem, kategoriemi příjmů a výdajů a transakcemi a je plně oddělena od stávající části Food Planner.
+- Kontext: Klient požadoval funkci pro měsíční plán rozpočtu, evidenci výdajů a upozornění na překročení rozpočtu. Rozpočet má fungovat jako samostatná část aplikace, aby se data jídelního plánu a rozpočtu neovlivňovala.
+- Důvod: Tím se zachová jednoduchost, přehlednost a nezávislost jednotlivých modulů, přičemž rozpočet může být rozšiřován samostatně bez zásahu do plánování jídel a zásob.
+
+### 2026-09-29 – Globální rozpočet bez měsíčních izolovaných plánů
+- Rozhodnutí: Rozpočet je globální pro všechny měsíce, zatímco měsíc v rozhraní slouží pouze jako filtr zobrazení a orientace v datech, nikoli jako samostatný rozpočtový plán.
+- Kontext: Uživatel explicitně požadoval, aby se změna limitu nebo rozpočtu provedla jednou pro všechna měsíce a aby nebylo možné přepínat mezi samostatnými měsíčními rozpočty. Také bylo požadováno, aby byla data vázána na existující databázový model aplikace a aby bylo možné přidat kategorie a transakce v jednom globálním nastavení.
+- Důvod: Tento model odpovídá běžnému domácímu rozpočtu, kde jsou limity a kategorie stabilní a měsíční pohled slouží jen pro filtrování výdajů a přehlednost. Zároveň to snižuje složitost dat a eliminuje nejasnosti při úpravách rozpočtu během roku.
+
+### 2026-09-29 – SQL model pro rozpočet a transakce
+- Rozhodnutí: Rozpočet se ukládá do tří tabulek: `budgets`, `budget_categories` a `budget_transactions`.
+- Kontext: Uživatel chtěl SQL dotaz pro vytvoření potřebných tabulek na serveru a požadoval oddělení dat rozpočtu od plánování jídel. Datové struktury musí být připojitelné k existující databázi a mít jednoduchý model pro globální rozpočet.
+- Důvod: Třístupňový model umožňuje mít jeden aktivní rozpočet, definované kategorie s limity a transakce pro jednotlivé dny a měsíce. To je dostatečně jednoduché pro domácnost, ale zároveň rozšiřitelné pro budoucí analýzu a grafy.
+
 ## 3. Záznam změn
 - Všechny navržené úpravy se zapisují sem, a to i v případě, že jsou pouze v prototypové fázi.
 - Poté, co je rozhodnutí přijato, je považováno za platné pro další vývoj.

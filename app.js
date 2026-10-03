@@ -181,6 +181,198 @@ purgePrototypeInventoryFixtures();
 
 const freezerItems = readInventoryList('food_planner_freezer_items', defaultFreezerItems, 'freezer');
 const stockItems = readInventoryList('food_planner_stock_items', defaultStockItems, 'stock');
+const budgetLogic = (typeof window !== 'undefined' && window.BudgetLogic) || (typeof require === 'function' ? require('./budget.js') : {});
+const budgetStorageKey = 'food_planner_budget_state_v1';
+
+function getDefaultBudgetState() {
+  const currentMonth = budgetLogic.getMonthKey ? budgetLogic.getMonthKey(new Date()) : '2026-09';
+  const categories = budgetLogic.createDefaultCategories ? budgetLogic.createDefaultCategories(currentMonth) : [];
+
+  return {
+    selectedMonth: currentMonth,
+    categories,
+    transactions: []
+  };
+}
+
+function loadBudgetState() {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return getDefaultBudgetState();
+  }
+
+  try {
+    const raw = window.localStorage.getItem(budgetStorageKey);
+    if (!raw) {
+      return getDefaultBudgetState();
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object') {
+      return getDefaultBudgetState();
+    }
+
+    const selectedMonth = budgetLogic.getMonthKey ? budgetLogic.getMonthKey(new Date()) : parsed.selectedMonth || '2026-09';
+    const categories = Array.isArray(parsed.categories) ? parsed.categories.map((category) => budgetLogic.normalizeCategory ? budgetLogic.normalizeCategory(category, selectedMonth) : category) : getDefaultBudgetState().categories;
+    const transactions = Array.isArray(parsed.transactions) ? parsed.transactions.map((transaction) => budgetLogic.normalizeTransaction ? budgetLogic.normalizeTransaction(transaction, selectedMonth) : transaction) : [];
+
+    return {
+      selectedMonth: String(parsed.selectedMonth || selectedMonth),
+      categories,
+      transactions
+    };
+  } catch (error) {
+    console.warn('Nepodařilo se načíst rozpočet z localStorage:', error);
+    return getDefaultBudgetState();
+  }
+}
+
+function persistBudgetState() {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(budgetStorageKey, JSON.stringify(budgetState));
+  } catch (error) {
+    console.warn('Nepodařilo se uložit rozpočet do localStorage:', error);
+  }
+}
+
+const budgetState = loadBudgetState();
+
+async function loadBudgetFromServer(monthKey = budgetState.selectedMonth) {
+  try {
+    const query = monthKey ? `?month_key=${encodeURIComponent(monthKey)}` : '';
+    const response = await fetch(`/api/budget${query}`);
+    const payload = await response.json();
+
+    if (!response.ok) {
+      throw new Error(payload.message || 'Nepodařilo se načíst rozpočet z databáze.');
+    }
+
+    const categories = Array.isArray(payload.categories)
+      ? payload.categories.map((category) => {
+          const monthKey = String(category.month_key || category.monthKey || budgetState.selectedMonth || (budgetLogic.getMonthKey ? budgetLogic.getMonthKey(new Date()) : '2026-09')).trim();
+          const normalized = budgetLogic.normalizeCategory ? budgetLogic.normalizeCategory({
+            id: category.id,
+            monthKey,
+            name: category.name,
+            type: category.type,
+            limit: category.planned_amount ?? category.limit ?? 0,
+            notes: category.notes || '',
+            isActive: category.is_active !== false
+          }, monthKey) : {
+            id: category.id,
+            monthKey,
+            name: category.name,
+            type: category.type,
+            limit: Number(category.planned_amount ?? category.limit ?? 0),
+            notes: category.notes || '',
+            isActive: category.is_active !== false
+          };
+          return normalized;
+        })
+      : [];
+
+    const transactions = Array.isArray(payload.transactions)
+      ? payload.transactions.map((transaction) => {
+          const monthKey = String(transaction.month_key || transaction.monthKey || budgetState.selectedMonth || (budgetLogic.getMonthKey ? budgetLogic.getMonthKey(new Date()) : '2026-09')).trim();
+          const normalized = budgetLogic.normalizeTransaction ? budgetLogic.normalizeTransaction({
+            id: transaction.id,
+            monthKey,
+            categoryId: transaction.category_id || transaction.categoryId || '',
+            categoryName: transaction.category_name || transaction.categoryName || '',
+            type: transaction.transaction_type || transaction.type || 'expense',
+            amount: transaction.amount,
+            description: transaction.description || '',
+            source: transaction.source || '',
+            date: transaction.transaction_date || transaction.date || new Date().toISOString().slice(0, 10)
+          }, monthKey) : {
+            id: transaction.id,
+            monthKey,
+            categoryId: transaction.category_id || transaction.categoryId || '',
+            categoryName: transaction.category_name || transaction.categoryName || '',
+            type: transaction.transaction_type || transaction.type || 'expense',
+            amount: Number(transaction.amount || 0),
+            description: transaction.description || '',
+            source: transaction.source || '',
+            date: transaction.transaction_date || transaction.date || new Date().toISOString().slice(0, 10)
+          };
+          return normalized;
+        })
+      : [];
+
+    budgetState.categories = categories;
+    budgetState.transactions = transactions;
+
+    if (!budgetState.selectedMonth) {
+      budgetState.selectedMonth = budgetLogic.getMonthKey ? budgetLogic.getMonthKey(new Date()) : '2026-09';
+    }
+
+    if (budgetState.categories.length || budgetState.transactions.length) {
+      renderBudgetView();
+    }
+
+    return true;
+  } catch (error) {
+    console.warn('Nepodařilo se načíst rozpočet z databáze:', error);
+    return false;
+  }
+}
+
+async function saveBudgetCategoryToServer(payload, categoryId = '') {
+  if (typeof window === 'undefined' || !window.fetch) {
+    return null;
+  }
+
+  const endpoint = categoryId ? `/api/budget/categories/${categoryId}` : '/api/budget/categories';
+  const response = await fetch(endpoint, {
+    method: categoryId ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(result.message || 'Nepodařilo se uložit kategorii.');
+  }
+
+  return result;
+}
+
+async function saveBudgetTransactionToServer(payload, transactionId = '') {
+  if (typeof window === 'undefined' || !window.fetch) {
+    return null;
+  }
+
+  const endpoint = transactionId ? `/api/budget/transactions/${transactionId}` : '/api/budget/transactions';
+  const response = await fetch(endpoint, {
+    method: transactionId ? 'PUT' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(result.message || 'Nepodařilo se uložit transakci.');
+  }
+
+  return result;
+}
+
+async function deleteBudgetTransactionFromServer(transactionId) {
+  if (!transactionId || typeof window === 'undefined' || !window.fetch) {
+    return false;
+  }
+
+  const response = await fetch(`/api/budget/transactions/${transactionId}`, { method: 'DELETE' });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(result.message || 'Nepodařilo se smazat transakci.');
+  }
+
+  return true;
+}
 
 const SLOT_GROUPS = [
   { key: 'breakfast', label: 'Snídaně', supercategory: 'Snídaně' },
@@ -581,6 +773,8 @@ const foodForm = document.getElementById('foodForm');
 const foodSupercategorySelect = document.getElementById('foodSupercategory');
 const foodSearch = document.getElementById('foodSearch');
 const navButtons = document.querySelectorAll('.nav-item');
+const appSwitchButtons = document.querySelectorAll('.app-switch-btn');
+const moduleNavs = document.querySelectorAll('.module-nav');
 const freezerForm = document.getElementById('freezerForm');
 const stockForm = document.getElementById('stockForm');
 const freezerSupercategory = document.getElementById('freezerSupercategory');
@@ -603,6 +797,23 @@ const foodPickerState = {
   weekStart: null,
   slotKey: null
 };
+
+const budgetMonthPicker = document.getElementById('budgetMonthPicker');
+const budgetSummaryCards = document.getElementById('budgetSummaryCards');
+const budgetCategoryForm = document.getElementById('budgetCategoryForm');
+const budgetCategoryList = document.getElementById('budgetCategoryList');
+const budgetTransactionForm = document.getElementById('budgetTransactionForm');
+const budgetTransactionList = document.getElementById('budgetTransactionList');
+const budgetTransactionCategory = document.getElementById('budgetTransactionCategory');
+const budgetAlertList = document.getElementById('budgetAlertList');
+const budgetPrevMonthBtn = document.getElementById('budgetPrevMonthBtn');
+const budgetNextMonthBtn = document.getElementById('budgetNextMonthBtn');
+const budgetChart = document.getElementById('budgetChart');
+const budgetCategoryIdInput = document.getElementById('budgetCategoryId');
+const budgetTransactionIdInput = document.getElementById('budgetTransactionId');
+const budgetCategorySubmitBtn = document.getElementById('budgetCategorySubmitBtn');
+const budgetTransactionSubmitBtn = document.getElementById('budgetTransactionSubmitBtn');
+const budgetTrendChart = document.getElementById('budgetTrendChart');
 
 let availableSupercategories = [];
 
@@ -1039,6 +1250,193 @@ function filterFoodSelectionOptions(foods, filters = {}) {
   });
 }
 
+function formatCurrency(value = 0) {
+  const numericValue = Number(value || 0);
+  return new Intl.NumberFormat('cs-CZ', {
+    style: 'currency',
+    currency: 'CZK',
+    maximumFractionDigits: 0
+  }).format(numericValue);
+}
+
+function getBudgetMonthOptions() {
+  const months = new Set([budgetState.selectedMonth || (budgetLogic.getMonthKey ? budgetLogic.getMonthKey(new Date()) : '2026-09')]);
+
+  budgetState.categories.forEach((category) => {
+    if (category && category.monthKey) {
+      months.add(String(category.monthKey));
+    }
+  });
+
+  budgetState.transactions.forEach((transaction) => {
+    if (transaction && transaction.monthKey) {
+      months.add(String(transaction.monthKey));
+    }
+  });
+
+  return Array.from(months).sort().reverse();
+}
+
+function renderBudgetView() {
+  if (!budgetMonthPicker || !budgetSummaryCards || !budgetCategoryList || !budgetTransactionList || !budgetAlertList) {
+    return;
+  }
+
+  const monthKeys = getBudgetMonthOptions();
+  const currentMonth = monthKeys.includes(String(budgetState.selectedMonth))
+    ? String(budgetState.selectedMonth)
+    : (monthKeys[0] || (budgetLogic.getMonthKey ? budgetLogic.getMonthKey(new Date()) : '2026-09'));
+
+  budgetState.selectedMonth = currentMonth;
+  budgetMonthPicker.innerHTML = monthKeys
+    .map((monthKey) => `<option value="${monthKey}">${budgetLogic.formatMonthLabel ? budgetLogic.formatMonthLabel(monthKey) : monthKey}</option>`)
+    .join('');
+  budgetMonthPicker.value = currentMonth;
+
+  const summary = budgetLogic.computeBudgetSummary
+    ? budgetLogic.computeBudgetSummary(currentMonth, budgetState.categories, budgetState.transactions)
+    : { totalPlannedIncome: 0, totalPlannedExpenses: 0, totalActualIncome: 0, totalActualExpenses: 0, monthlyBalance: 0, remainingBudget: 0, categoryBreakdown: [] };
+
+  budgetSummaryCards.innerHTML = `
+    <div class="budget-metric summary-card accent">
+      <span class="label">Plánovaný příjem</span>
+      <strong>${formatCurrency(summary.totalPlannedIncome || 0)}</strong>
+    </div>
+    <div class="budget-metric summary-card">
+      <span class="label">Plánované výdaje</span>
+      <strong>${formatCurrency(summary.totalPlannedExpenses || 0)}</strong>
+    </div>
+    <div class="budget-metric summary-card">
+      <span class="label">Skutečné výdaje</span>
+      <strong>${formatCurrency(summary.totalActualExpenses || 0)}</strong>
+    </div>
+    <div class="budget-metric summary-card">
+      <span class="label">Zůstatek</span>
+      <strong>${formatCurrency(summary.monthlyBalance || 0)}</strong>
+    </div>
+  `;
+
+  const monthCategories = Array.isArray(budgetState.categories) ? budgetState.categories : [];
+  const selectedCategoryOptions = monthCategories.filter((category) => category.type === 'expense' || category.type === 'income');
+
+  if (budgetTransactionCategory) {
+    budgetTransactionCategory.innerHTML = selectedCategoryOptions.length
+      ? selectedCategoryOptions.map((category) => `<option value="${category.id}">${category.name}</option>`).join('')
+      : '<option value="">Žádné kategorie</option>';
+  }
+
+  budgetCategoryList.innerHTML = monthCategories.length
+    ? monthCategories.map((category) => {
+        const usage = summary.categoryBreakdown.find((item) => item.id === category.id) || { totalUsed: 0, remaining: category.limit || 0, usageRatio: 0 };
+        const usagePercent = Math.min(100, Math.round((usage.usageRatio || 0) * 100));
+        return `
+          <li class="budget-category-row" data-category-id="${category.id}">
+            <div>
+              <strong>${category.name}</strong><br />
+              <small>${category.type === 'income' ? 'Příjem' : 'Výdaj'} · ${formatCurrency(category.limit || 0)} · použití ${usagePercent}%</small>
+            </div>
+            <div class="inventory-actions budget-list-actions">
+              <span class="budget-usage-pill">${formatCurrency(usage.totalUsed || 0)}</span>
+              <button class="secondary budget-edit-btn" type="button" data-category-id="${category.id}">Upravit</button>
+            </div>
+          </li>
+        `;
+      }).join('')
+    : '<li><div class="budget-empty">Žádné kategorie pro rozpočet.</div></li>';
+
+  const monthTransactions = budgetLogic.getTransactionsForMonth
+    ? budgetLogic.getTransactionsForMonth(currentMonth, budgetState.transactions)
+    : [];
+
+  budgetTransactionList.innerHTML = monthTransactions.length
+    ? monthTransactions.map((transaction) => {
+        const category = budgetState.categories.find((item) => String(item.id) === String(transaction.categoryId)) || { name: transaction.categoryName || 'Neznámá kategorie' };
+        return `
+          <li class="budget-transaction-row" data-transaction-id="${transaction.id}">
+            <div>
+              <strong>${category.name}</strong><br />
+              <small>${transaction.date} · ${transaction.description || 'Bez popisu'}</small>
+            </div>
+            <div class="inventory-actions budget-list-actions">
+              <span class="${transaction.type === 'income' ? 'positive' : 'negative'}">${transaction.type === 'income' ? '+' : '-'}${formatCurrency(transaction.amount || 0)}</span>
+              <button class="secondary budget-delete-transaction-btn" type="button" data-transaction-id="${transaction.id}">Smazat</button>
+            </div>
+          </li>
+        `;
+      }).join('')
+    : '<li><div class="budget-empty">Žádné transakce pro tento měsíc.</div></li>';
+
+  const alerts = budgetLogic.buildBudgetAlerts
+    ? budgetLogic.buildBudgetAlerts(summary, budgetState.categories, budgetState.transactions)
+    : [];
+
+  budgetAlertList.innerHTML = alerts.length
+    ? alerts.map((alert) => `
+        <li class="alert-item ${alert.level || 'warning'}">
+          <div>
+            <strong>${alert.categoryName || 'Upozornění'}</strong><br />
+            <small>${alert.message}</small>
+          </div>
+          <span class="alert-tag ${alert.level || 'warning'}">${alert.level === 'critical' ? 'Kritické' : 'Varování'}</span>
+        </li>
+      `).join('')
+    : '<li class="budget-empty">Bez varování. Rozpočet je v pořádku.</li>';
+
+  if (budgetChart) {
+    const expenseCategories = monthCategories.filter((category) => category.type === 'expense');
+    if (!expenseCategories.length) {
+      budgetChart.innerHTML = '<div class="budget-empty">Žádné výdajové kategorie pro tento měsíc.</div>';
+    } else {
+      budgetChart.innerHTML = expenseCategories.map((category) => {
+        const usage = summary.categoryBreakdown.find((item) => item.id === category.id) || { totalUsed: 0, useRatio: 0 };
+        const used = Number(usage.totalUsed || 0);
+        const limit = Number(category.limit || 0);
+        const percentage = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
+
+        return `
+          <div class="budget-chart-row">
+            <div class="budget-chart-labels">
+              <span>${category.name}</span>
+              <strong>${formatCurrency(used)} / ${formatCurrency(limit)}</strong>
+            </div>
+            <div class="budget-progress"><span style="width: ${percentage}%"></span></div>
+          </div>
+        `;
+      }).join('');
+    }
+  }
+
+  if (budgetTrendChart) {
+    const trendMonths = Array.from(new Set([
+      budgetState.selectedMonth,
+      ...budgetState.categories.map((category) => category.monthKey),
+      ...budgetState.transactions.map((transaction) => transaction.monthKey)
+    ].filter(Boolean))).sort();
+    const trend = budgetLogic.buildBudgetTrend ? budgetLogic.buildBudgetTrend(trendMonths.slice(-6), budgetState.categories, budgetState.transactions) : [];
+
+    if (!trend.length) {
+      budgetTrendChart.innerHTML = '<div class="budget-empty">Žádné údaje pro vývoj rozpočtu.</div>';
+    } else {
+      const maxSpent = Math.max(...trend.map((item) => Number(item.spent || 0)), 1);
+      budgetTrendChart.innerHTML = trend.map((item) => {
+        const height = Math.max(16, (Number(item.spent || 0) / maxSpent) * 100);
+        const barClass = Number(item.balance || 0) >= 0 ? 'positive' : 'negative';
+        return `
+          <div class="budget-trend-column">
+            <div class="budget-trend-bar-wrap">
+              <div class="budget-trend-bar ${barClass}" style="height: ${height}%"></div>
+            </div>
+            <span>${item.label}</span>
+            <small>${formatCurrency(item.balance || 0)}</small>
+          </div>
+        `;
+      }).join('');
+    }
+  }
+
+  persistBudgetState();
+}
+
 function renderWeekPlan() {
   if (!weekPlanEl) {
     return;
@@ -1308,9 +1706,29 @@ function closeFoodPickerModal() {
   foodPickerState.slotKey = null;
 }
 
+function setActiveApp(appName = 'foodplanner') {
+  const nextApp = appName === 'budget' ? 'budget' : 'foodplanner';
+
+  if (typeof document !== 'undefined' && document.body) {
+    document.body.dataset.activeApp = nextApp;
+  }
+
+  appSwitchButtons.forEach((button) => {
+    button.classList.toggle('active', button.dataset.appSwitch === nextApp);
+  });
+
+  moduleNavs.forEach((nav) => {
+    nav.classList.toggle('hidden', nav.dataset.moduleNav !== nextApp);
+  });
+
+  const nextView = nextApp === 'budget' ? 'budget' : 'overview';
+  setActiveView(nextView);
+}
+
 function setActiveView(viewName) {
   navButtons.forEach((button) => {
-    const isActive = button.dataset.view === viewName;
+    const activeApp = typeof document !== 'undefined' && document.body ? document.body.dataset.activeApp : 'foodplanner';
+    const isActive = button.dataset.view === viewName && button.dataset.app === activeApp;
     button.classList.toggle('active', isActive);
   });
 
@@ -1321,7 +1739,7 @@ function setActiveView(viewName) {
 
   const sidePanel = document.querySelector('.side-panel');
   if (sidePanel) {
-    sidePanel.classList.toggle('hidden', viewName === 'freezer' || viewName === 'stock');
+    sidePanel.classList.toggle('hidden', viewName === 'freezer' || viewName === 'stock' || viewName === 'budget');
   }
 
   if (viewName === 'overview') {
@@ -1339,14 +1757,33 @@ function setActiveView(viewName) {
   if (viewName === 'stock') {
     renderStockList();
   }
+
+  if (viewName === 'budget') {
+    renderBudgetView();
+  }
+}
+
+if (typeof document !== 'undefined' && document.body) {
+  document.body.dataset.activeApp = 'foodplanner';
 }
 
 navButtons.forEach((button) => {
   button.addEventListener('click', () => {
-    const nextView = button.dataset.view || 'overview';
-    setActiveView(nextView);
+    const nextApp = button.dataset.app || 'foodplanner';
+    setActiveApp(nextApp);
   });
 });
+
+appSwitchButtons.forEach((button) => {
+  button.addEventListener('click', () => {
+    const nextApp = button.dataset.appSwitch || 'foodplanner';
+    setActiveApp(nextApp);
+  });
+});
+
+if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
+  loadBudgetFromServer();
+}
 
 foodForm.addEventListener('submit', async (event) => {
   event.preventDefault();
@@ -1424,6 +1861,211 @@ foodForm.addEventListener('submit', async (event) => {
 
 if (foodSearch) {
   foodSearch.addEventListener('input', renderFoodCatalog);
+}
+
+if (budgetMonthPicker) {
+  budgetMonthPicker.addEventListener('change', async (event) => {
+    budgetState.selectedMonth = event.target.value || budgetState.selectedMonth;
+    await loadBudgetFromServer(budgetState.selectedMonth);
+    renderBudgetView();
+  });
+}
+
+if (budgetPrevMonthBtn) {
+  budgetPrevMonthBtn.addEventListener('click', async () => {
+    const currentMonth = budgetState.selectedMonth || (budgetLogic.getMonthKey ? budgetLogic.getMonthKey(new Date()) : '2026-09');
+    const [year, month] = currentMonth.split('-').map(Number);
+    const next = new Date(year, month - 1, 1);
+    next.setMonth(next.getMonth() - 1);
+    budgetState.selectedMonth = budgetLogic.getMonthKey ? budgetLogic.getMonthKey(next) : `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+    await loadBudgetFromServer(budgetState.selectedMonth);
+    renderBudgetView();
+  });
+}
+
+if (budgetNextMonthBtn) {
+  budgetNextMonthBtn.addEventListener('click', async () => {
+    const currentMonth = budgetState.selectedMonth || (budgetLogic.getMonthKey ? budgetLogic.getMonthKey(new Date()) : '2026-09');
+    const [year, month] = currentMonth.split('-').map(Number);
+    const next = new Date(year, month - 1, 1);
+    next.setMonth(next.getMonth() + 1);
+    budgetState.selectedMonth = budgetLogic.getMonthKey ? budgetLogic.getMonthKey(next) : `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+    await loadBudgetFromServer(budgetState.selectedMonth);
+    renderBudgetView();
+  });
+}
+
+if (budgetCategoryForm) {
+  budgetCategoryForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    const categoryId = budgetCategoryIdInput?.value || '';
+    const name = document.getElementById('budgetCategoryName')?.value?.trim();
+    const type = document.getElementById('budgetCategoryType')?.value || 'expense';
+    const limit = Number(document.getElementById('budgetCategoryLimit')?.value || 0);
+    const notes = document.getElementById('budgetCategoryNotes')?.value?.trim() || '';
+
+    if (!name) {
+      return;
+    }
+
+    const categoryPayload = {
+      name,
+      type,
+      planned_amount: limit,
+      notes,
+      color: '#2d7a5f'
+    };
+
+    try {
+      const response = await saveBudgetCategoryToServer(categoryPayload, categoryId || undefined);
+      if (response) {
+        await loadBudgetFromServer(budgetState.selectedMonth);
+      }
+    } catch (error) {
+      console.error('Chyba při ukládání kategorie rozpočtu:', error);
+      window.alert(error.message || 'Nepodařilo se uložit kategorii.');
+      return;
+    }
+
+    budgetCategoryForm.reset();
+    budgetCategoryIdInput.value = '';
+    budgetCategorySubmitBtn.textContent = 'Přidat kategorii';
+    renderBudgetView();
+  });
+}
+
+if (budgetTransactionForm) {
+  budgetTransactionForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    const transactionId = budgetTransactionIdInput?.value || '';
+    const categoryId = budgetTransactionCategory?.value;
+    const amount = Number(document.getElementById('budgetTransactionAmount')?.value || 0);
+    const type = document.getElementById('budgetTransactionType')?.value || 'expense';
+    const date = document.getElementById('budgetTransactionDate')?.value || new Date().toISOString().slice(0, 10);
+    const description = document.getElementById('budgetTransactionDescription')?.value?.trim() || 'Bez popisu';
+    const source = document.getElementById('budgetTransactionSource')?.value?.trim() || '';
+
+    if (!categoryId || amount <= 0) {
+      return;
+    }
+
+    const category = budgetState.categories.find((item) => String(item.id) === String(categoryId));
+    const payload = {
+      category_id: categoryId,
+      month_key: budgetState.selectedMonth,
+      transaction_type: type,
+      amount,
+      description,
+      source,
+      transaction_date: date
+    };
+
+    try {
+      const response = await saveBudgetTransactionToServer(payload, transactionId || undefined);
+      if (response) {
+        await loadBudgetFromServer(budgetState.selectedMonth);
+      }
+    } catch (error) {
+      console.error('Chyba při ukládání transakce rozpočtu:', error);
+      window.alert(error.message || 'Nepodařilo se uložit transakci.');
+      return;
+    }
+
+    budgetTransactionForm.reset();
+    budgetTransactionIdInput.value = '';
+    budgetTransactionSubmitBtn.textContent = 'Zapsat transakci';
+    renderBudgetView();
+  });
+}
+
+if (budgetCategoryList) {
+  budgetCategoryList.addEventListener('click', (event) => {
+    const button = event.target.closest('.budget-edit-btn');
+    if (!button) {
+      return;
+    }
+
+    const categoryId = button.dataset.categoryId;
+    const category = budgetState.categories.find((item) => String(item.id) === String(categoryId));
+    if (!category) {
+      return;
+    }
+
+    if (budgetCategoryIdInput) {
+      budgetCategoryIdInput.value = category.id;
+    }
+    if (document.getElementById('budgetCategoryName')) {
+      document.getElementById('budgetCategoryName').value = category.name;
+    }
+    if (document.getElementById('budgetCategoryType')) {
+      document.getElementById('budgetCategoryType').value = category.type;
+    }
+    if (document.getElementById('budgetCategoryLimit')) {
+      document.getElementById('budgetCategoryLimit').value = category.limit;
+    }
+    if (document.getElementById('budgetCategoryNotes')) {
+      document.getElementById('budgetCategoryNotes').value = category.notes || '';
+    }
+    if (budgetCategorySubmitBtn) {
+      budgetCategorySubmitBtn.textContent = 'Uložit úpravu';
+    }
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+}
+
+if (budgetTransactionList) {
+  budgetTransactionList.addEventListener('click', async (event) => {
+    const deleteButton = event.target.closest('.budget-delete-transaction-btn');
+    if (deleteButton) {
+      const transactionId = deleteButton.dataset.transactionId;
+      try {
+        await deleteBudgetTransactionFromServer(transactionId);
+        await loadBudgetFromServer(budgetState.selectedMonth);
+      } catch (error) {
+        console.error('Chyba při mazání transakce:', error);
+        window.alert(error.message || 'Nepodařilo se odstranit transakci.');
+      }
+      return;
+    }
+
+    const row = event.target.closest('.budget-transaction-row');
+    if (!row) {
+      return;
+    }
+
+    const transactionId = row.dataset.transactionId;
+    const transaction = budgetState.transactions.find((item) => String(item.id) === String(transactionId));
+    if (!transaction) {
+      return;
+    }
+
+    if (budgetTransactionIdInput) {
+      budgetTransactionIdInput.value = transaction.id;
+    }
+    if (document.getElementById('budgetTransactionType')) {
+      document.getElementById('budgetTransactionType').value = transaction.type;
+    }
+    if (document.getElementById('budgetTransactionAmount')) {
+      document.getElementById('budgetTransactionAmount').value = transaction.amount;
+    }
+    if (document.getElementById('budgetTransactionDescription')) {
+      document.getElementById('budgetTransactionDescription').value = transaction.description || '';
+    }
+    if (document.getElementById('budgetTransactionSource')) {
+      document.getElementById('budgetTransactionSource').value = transaction.source || '';
+    }
+    if (document.getElementById('budgetTransactionDate')) {
+      document.getElementById('budgetTransactionDate').value = transaction.date || new Date().toISOString().slice(0, 10);
+    }
+    if (budgetTransactionCategory) {
+      budgetTransactionCategory.value = transaction.categoryId || budgetTransactionCategory.value;
+    }
+    if (budgetTransactionSubmitBtn) {
+      budgetTransactionSubmitBtn.textContent = 'Uložit transakci';
+    }
+  });
 }
 
 if (foodPickerSupercategory) {
@@ -1687,6 +2329,7 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
 
 renderFreezerList();
 renderStockList();
+renderBudgetView();
 populateInventoryFoodSelects();
 renderWeekHeader();
 setActiveView('overview');
