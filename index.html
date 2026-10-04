@@ -449,6 +449,15 @@
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
     <script>
       async function ensureAccess() {
+        const recoveryParameters = new URLSearchParams(window.location.hash.slice(1));
+        if (recoveryParameters.get('type') === 'recovery') {
+          const recoveryUrl = new URL('/login.html', window.location.origin);
+          recoveryUrl.searchParams.set('recovery', '1');
+          recoveryUrl.hash = window.location.hash.slice(1);
+          window.location.replace(recoveryUrl.toString());
+          return;
+        }
+
         const response = await fetch('/api/config');
         const config = await response.json();
 
@@ -457,6 +466,7 @@
           return;
         }
 
+        let recoveryDetected = false;
         const supabase = window.supabase.createClient(config.supabaseUrl, config.supabasePublishableKey, {
           auth: {
             persistSession: true,
@@ -465,7 +475,17 @@
           }
         });
 
+        supabase.auth.onAuthStateChange((event) => {
+          if (event === 'PASSWORD_RECOVERY') {
+            recoveryDetected = true;
+            window.location.replace('/login.html?recovery=1');
+          }
+        });
+
         const { data: { session } } = await supabase.auth.getSession();
+        if (recoveryDetected) {
+          return;
+        }
 
         if (!session) {
           window.location.href = '/login.html';
@@ -477,6 +497,10 @@
             Authorization: `Bearer ${session.access_token}`
           }
         });
+
+        if (recoveryDetected) {
+          return;
+        }
 
         if (!accessCheck.ok) {
           await supabase.auth.signOut();

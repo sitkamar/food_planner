@@ -218,7 +218,7 @@
         confirmPasswordInput.required = isRecovery;
         forgotPasswordBtn.hidden = !isLogin;
         loginTab.classList.toggle('active', isLogin);
-        signupTab.classList.toggle('active', !isLogin);
+        signupTab.classList.toggle('active', !isLogin && !isRecovery);
         submitBtn.textContent = isRecovery ? 'Uložit nové heslo' : isLogin ? 'Přihlásit se' : 'Vytvořit účet';
         authSubtitle.textContent = isRecovery
           ? 'Zvolte si nové heslo k účtu.'
@@ -321,7 +321,7 @@
         try {
           const supabase = await initSupabase();
           const { error } = await supabase.auth.resetPasswordForEmail(email, {
-            redirectTo: `${window.location.origin}/login.html`
+            redirectTo: `${window.location.origin}/`
           });
           if (error) {
             throw error;
@@ -431,7 +431,7 @@
         }
       });
 
-      setMode('login');
+      setMode(new URLSearchParams(window.location.search).get('recovery') === '1' ? 'recovery' : 'login');
       checkExistingSession();
     </script>
   </body>

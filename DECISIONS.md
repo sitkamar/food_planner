@@ -177,6 +177,7 @@ Tento soubor je hlavním zdrojem pravdy o projektu. Všechny důležité rozhodn
 - Rozhodnutí: Přihlašovací stránka umožní vyžádat e-mail pro obnovu hesla; po události Supabase Auth `PASSWORD_RECOVERY` nabídne zadání a potvrzení nového hesla, které uloží přes `updateUser`.
 - Kontext: Uživatel požádal o možnost vytvořit nové heslo po otevření jednorázového odkazu zaslaného Supabase.
 - Důvod: Obnova používá ověřenou relaci vytvořenou jednorázovým odkazem a nepředává heslo serveru aplikace.
+- Doplnění: Žádost o obnovu se vrací na kořen aplikace, který zachytí `PASSWORD_RECOVERY` nebo recovery fragment a přesměruje na přihlašovací formulář v režimu obnovy. Tím se respektuje aktuální adresa projektu Supabase.
 
 ### 2026-10-04 – Výběr dne transakce v rámci zvoleného měsíce
 - Rozhodnutí: Formulář transakce vybírá pouze den; rok a měsíc se automaticky převezmou z právě vybraného měsíce rozpočtu. Nabídka dnů respektuje délku měsíce včetně přestupného roku.
