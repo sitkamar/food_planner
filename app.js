@@ -2230,7 +2230,7 @@ function setActiveView(viewName) {
 }
 
 if (typeof document !== 'undefined' && document.body) {
-  document.body.dataset.activeApp = getAppFromSearch(window.location?.search || '');
+  setActiveApp(getAppFromSearch(window.location?.search || ''), false);
 }
 
 navButtons.forEach((button) => {
@@ -3116,7 +3116,6 @@ renderStockList();
 renderBudgetView();
 populateInventoryFoodSelects();
 renderWeekHeader();
-setActiveView(document.body?.dataset.activeApp === 'budget' ? 'budget-overview' : 'overview');
 loadSupercategoryOptions();
 loadFoodCatalog();
 loadSavedWeeklyPlans();
