@@ -96,3 +96,12 @@ test('normalizace transakce přijme reálná pole z databáze a zachová zobraze
   assert.equal(normalized.amount, 1250);
   assert.equal(normalized.date, '2026-09-12');
 });
+
+test('měsíc transakce se při načtení odvodí z data i při nesouladu s month_key', () => {
+  const normalized = normalizeTransaction({
+    month_key: '2026-10',
+    transaction_date: '2026-09-12'
+  });
+
+  assert.equal(normalized.monthKey, '2026-09');
+});

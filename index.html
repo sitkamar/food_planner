@@ -13,7 +13,7 @@
           <div class="brand-mark">FP</div>
           <div>
             <p class="brand-label">Domácí plánovač</p>
-            <h2>Food Planner</h2>
+            <button id="appToggleButton" class="brand-app-toggle" type="button" aria-label="Přepnout na Budget Planner">Food Planner</button>
           </div>
         </div>
 
@@ -27,11 +27,6 @@
         <nav class="nav module-nav hidden" data-module-nav="budget" aria-label="Navigace rozpočtu">
           <button class="nav-item" type="button" data-app="budget" data-view="budget">Přehled rozpočtu</button>
         </nav>
-
-        <div class="app-switcher" role="tablist" aria-label="Přepínání aplikací">
-          <button class="app-switch-btn active" type="button" data-app-switch="foodplanner">Food Planner</button>
-          <button class="app-switch-btn" type="button" data-app-switch="budget">Rozpočet</button>
-        </div>
 
         <div class="sidebar-note">
           <span class="status-dot"></span>
@@ -65,17 +60,37 @@
 
             <div class="view-panel hidden" data-view-panel="foods">
               <div class="section-header">
-                <h2>Seznam jídel</h2>
+                <h2>Katalog jídel</h2>
               </div>
 
-              <div class="filter-bar">
-                <label class="search-field">
+              <div class="catalog-controls">
+                <label class="search-field catalog-search">
                   <span>Vyhledat jídlo</span>
                   <input id="foodSearch" type="search" placeholder="Hledat podle názvu nebo kategorie" />
                 </label>
+                <div class="catalog-actions">
+                  <div class="catalog-view-switch" role="group" aria-label="Zobrazení katalogu">
+                    <button id="foodListModeButton" class="catalog-view-button active" type="button" aria-pressed="true">Seznam</button>
+                    <button id="foodMenuModeButton" class="catalog-view-button" type="button" aria-pressed="false">Jídelní lístek</button>
+                  </div>
+                  <label class="catalog-sort">
+                    <span>Řadit podle</span>
+                    <select id="foodSort">
+                      <option value="name">Názvu (A–Z)</option>
+                      <option value="newest">Nejnovější</option>
+                      <option value="oldest">Nejstarší</option>
+                    </select>
+                  </label>
+                </div>
               </div>
 
-              <ul id="foodCatalog" class="list catalog-list" aria-live="polite"></ul>
+              <div id="foodCatalogListPane">
+                <ul id="foodCatalog" class="list catalog-list" aria-live="polite"></ul>
+              </div>
+              <div id="foodMenuPane" class="food-menu-pane hidden">
+                <nav id="foodMenuPages" class="food-menu-pages" role="tablist" aria-label="Nadkategorie jídel"></nav>
+                <div id="foodMenuPage" class="food-menu-page" role="tabpanel" aria-live="polite"></div>
+              </div>
             </div>
 
             <div class="view-panel hidden" data-view-panel="freezer">
@@ -211,7 +226,7 @@
                       </label>
                       <label>
                         <span>Limit</span>
-                        <input id="budgetCategoryLimit" type="number" min="0" step="100" value="0" />
+                        <input id="budgetCategoryLimit" type="number" min="0" step="1" value="0" />
                       </label>
                     </div>
                     <label>
@@ -251,7 +266,7 @@
                     <div class="inline-fields">
                       <label>
                         <span>Částka</span>
-                        <input id="budgetTransactionAmount" type="number" min="0" step="100" value="0" />
+                        <input id="budgetTransactionAmount" type="number" min="0" step="1" value="0" />
                       </label>
                       <label>
                         <span>Zdroj</span>
@@ -297,10 +312,11 @@
           <aside class="side-panel">
             <section class="card">
               <div class="section-header small">
-                <h3>Přidat nové jídlo</h3>
+                <h3 id="foodFormTitle">Přidat nové jídlo</h3>
               </div>
 
               <form id="foodForm" class="mini-form">
+                <input id="foodId" type="hidden" value="" />
                 <label>
                   <span>Název jídla</span>
                   <input id="foodName" type="text" placeholder="Např. Lasagne" />
@@ -311,13 +327,26 @@
                 </label>
                 <label>
                   <span>Kategorie</span>
-                  <input id="foodCategory" type="text" placeholder="Např. s rýží" />
+                  <div class="food-combobox">
+                    <div class="food-combobox-field">
+                      <input id="foodCategory" type="text" placeholder="Vyberte nebo zadejte kategorii" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="foodCategoryOptions" aria-expanded="false" autocomplete="off" />
+                      <button id="foodCategoryToggle" class="food-combobox-toggle" type="button" aria-label="Zobrazit existující kategorie" aria-controls="foodCategoryOptions" aria-expanded="false"><span class="food-combobox-chevron" aria-hidden="true"></span></button>
+                    </div>
+                    <div id="foodCategoryOptions" class="food-suggestions hidden" role="listbox" aria-label="Existující kategorie"></div>
+                  </div>
                 </label>
                 <label>
                   <span>Podkategorie</span>
-                  <input id="foodSubcategory" type="text" placeholder="Volitelné" />
+                  <div class="food-combobox">
+                    <div class="food-combobox-field">
+                      <input id="foodSubcategory" type="text" placeholder="Vyberte nebo zadejte podkategorii" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="foodSubcategoryOptions" aria-expanded="false" autocomplete="off" />
+                      <button id="foodSubcategoryToggle" class="food-combobox-toggle" type="button" aria-label="Zobrazit existující podkategorie" aria-controls="foodSubcategoryOptions" aria-expanded="false"><span class="food-combobox-chevron" aria-hidden="true"></span></button>
+                    </div>
+                    <div id="foodSubcategoryOptions" class="food-suggestions hidden" role="listbox" aria-label="Existující podkategorie"></div>
+                  </div>
                 </label>
-                <button class="primary" type="submit">Přidat do katalogu</button>
+                <button id="foodSubmitButton" class="primary" type="submit">Přidat do katalogu</button>
+                <button id="cancelFoodEditButton" class="secondary hidden" type="button">Zrušit úpravy</button>
               </form>
             </section>
           </aside>
@@ -404,6 +433,7 @@
 
       ensureAccess();
     </script>
+    <script src="budget.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

@@ -89,14 +89,15 @@
   }
 
   function normalizeTransaction(raw = {}, fallbackMonthKey = getMonthKey()) {
-    const monthKey = String(raw.monthKey || raw.month || raw.month_key || fallbackMonthKey || getMonthKey()).trim() || getMonthKey();
+    const date = String(raw.date || raw.transaction_date || raw.transactionDate || new Date().toISOString().slice(0, 10)).slice(0, 10);
+    const dateMonthKey = /^\d{4}-\d{2}-\d{2}$/.test(date) ? date.slice(0, 7) : '';
+    const monthKey = dateMonthKey || String(raw.monthKey || raw.month || raw.month_key || fallbackMonthKey || getMonthKey()).trim() || getMonthKey();
     const type = raw.type === 'income' || raw.transaction_type === 'income' || raw.transactionType === 'income'
       ? 'income'
       : 'expense';
     const amount = Math.abs(normalizeNumber(raw.amount ?? raw.value ?? raw.total ?? 0));
     const categoryId = String(raw.categoryId || raw.category_id || raw.category || '').trim();
     const categoryName = String(raw.categoryName || raw.category_name || raw.category || '').trim();
-    const date = String(raw.date || raw.transaction_date || raw.transactionDate || new Date().toISOString().slice(0, 10));
 
     return {
       id: String(raw.id || `txn-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`),

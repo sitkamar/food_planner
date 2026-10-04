@@ -38,6 +38,7 @@ function normalizeFoodRow(row, categoryMap, supercategoryMap, subcategoryMap, ty
     id: row.id,
     name: row.name,
     is_active: row.is_active,
+    createdAt: row.created_at,
     supercategory,
     category,
     subcategory,
@@ -354,7 +355,7 @@ app.post('/api/budget/transactions', async (req, res) => {
     const transactionType = req.body?.transaction_type === 'income' ? 'income' : 'expense';
     const amount = Number(req.body?.amount ?? 0);
     const date = String(req.body?.transaction_date || req.body?.date || new Date().toISOString().slice(0, 10));
-    const monthKey = String(req.body?.month_key || req.body?.monthKey || date.slice(0, 7));
+    const monthKey = date.slice(0, 7);
 
     if (!categoryId || !Number.isFinite(amount) || amount <= 0) {
       return res.status(400).json({ ok: false, message: 'Neplatné údaje pro transakci.' });
@@ -397,7 +398,7 @@ app.put('/api/budget/transactions/:id', async (req, res) => {
     const transactionType = req.body?.transaction_type === 'income' ? 'income' : 'expense';
     const amount = Number(req.body?.amount ?? 0);
     const date = String(req.body?.transaction_date || req.body?.date || new Date().toISOString().slice(0, 10));
-    const monthKey = String(req.body?.month_key || req.body?.monthKey || date.slice(0, 7));
+    const monthKey = date.slice(0, 7);
 
     const { data, error } = await supabaseAdmin
       .from('budget_transactions')
@@ -571,7 +572,7 @@ app.get('/api/foods', async (req, res) => {
     const [foodsResult, categoriesResult, supercategoriesResult, subcategoriesResult, typesResult] = await Promise.all([
       supabaseAdmin
         .from('foods')
-        .select('id, name, is_active, supercategory_id, category_id, subcategory_id')
+        .select('id, name, is_active, supercategory_id, category_id, subcategory_id, created_at')
         .order('name', { ascending: true }),
       supabaseAdmin
         .from('food_categories')
@@ -624,7 +625,7 @@ app.get('/api/foods', async (req, res) => {
   }
 });
 
-app.post('/api/foods', async (req, res) => {
+async function saveFood(req, res, foodId = null) {
   if (!supabaseAdmin) {
     return res.status(503).json({ ok: false, message: 'Chybí konfigurace Supabase.' });
   }
@@ -747,25 +748,37 @@ app.post('/api/foods', async (req, res) => {
       subcategoryId = subcategoryRow.id;
     }
 
-    const { data: insertedFood, error: insertFoodError } = await supabaseAdmin
-      .from('foods')
-      .insert([{
-        name,
-        supercategory_id: supercategoryRow.id,
-        category_id: categoryRow.id,
-        subcategory_id: subcategoryId,
-        is_active: true
-      }])
-      .select('id, name, is_active, supercategory_id, category_id, subcategory_id')
-      .single();
+    const foodValues = {
+      name,
+      supercategory_id: supercategoryRow.id,
+      category_id: categoryRow.id,
+      subcategory_id: subcategoryId,
+      is_active: true
+    };
+    let foodSaveQuery = supabaseAdmin.from('foods');
 
-    if (insertFoodError) {
-      throw insertFoodError;
+    if (foodId) {
+      foodSaveQuery = foodSaveQuery.update(foodValues).eq('id', foodId);
+    } else {
+      foodSaveQuery = foodSaveQuery.insert([foodValues]);
+    }
+
+    const { data: savedFood, error: saveFoodError } = await foodSaveQuery
+      .select('id, name, is_active, supercategory_id, category_id, subcategory_id, created_at')
+      .maybeSingle();
+
+    if (saveFoodError) {
+      throw saveFoodError;
+    }
+
+    if (!savedFood) {
+      return res.status(404).json({ ok: false, message: 'Upravované jídlo už v katalogu neexistuje.' });
     }
 
     const item = {
-      id: insertedFood.id,
-      name: insertedFood.name,
+      id: savedFood.id,
+      name: savedFood.name,
+      createdAt: savedFood.created_at,
       supercategory: normalizedSupercategory,
       category: normalizedCategory,
       subcategory: normalizedSubcategory || null,
@@ -776,14 +789,17 @@ app.post('/api/foods', async (req, res) => {
 
     return res.json({ ok: true, item, message: 'Jídlo bylo uloženo do katalogu.' });
   } catch (error) {
-    console.error('Chyba při vytváření jídla v katalogu:', error);
+    console.error(foodId ? 'Chyba při úpravě jídla v katalogu:' : 'Chyba při vytváření jídla v katalogu:', error);
     return res.status(500).json({
       ok: false,
-      message: 'Nepodařilo se uložit jídlo do databáze.',
+      message: foodId ? 'Nepodařilo se upravit jídlo v databázi.' : 'Nepodařilo se uložit jídlo do databáze.',
       details: error.message || 'Neznámá chyba databáze.'
     });
   }
-});
+}
+
+app.post('/api/foods', (req, res) => saveFood(req, res));
+app.put('/api/foods/:id', (req, res) => saveFood(req, res, req.params.id));
 
 app.get('/api/weekly-plans', async (req, res) => {
   if (!supabaseAdmin) {

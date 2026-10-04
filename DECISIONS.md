@@ -90,6 +90,22 @@ Tento soubor je hlavním zdrojem pravdy o projektu. Všechny důležité rozhodn
 - Kontext: Frontend si jídlo přidal pouze lokálně v rozhraní, ale nebylo to skutečně persistováno do databáze Supabase.
 - Důvod: Katalog jídel má být plně uložený a obnovitelný, nikoliv jen krátkodobě zobrazený v prohlížeči.
 
+### 2026-10-04 – Výběr kategorií a úprava jídel v katalogu
+- Rozhodnutí: Formulář katalogu nabídne již použité kategorie a podkategorie jako našeptávané možnosti, ale zachová možnost zadat vlastní hodnotu. Každé jídlo půjde upravit podle jeho interního `food_id`, včetně názvu a zařazení.
+- Kontext: Uživatel požádal o omezení překlepů při zadávání klasifikace a možnost opravit existující jídla přímo z katalogu.
+- Důvod: Našeptávání usnadní opakované použití stejného zařazení bez zavedení tagů či dalšího klasifikačního modelu; identifikátor umožní bezpečně upravit jídla se stejným názvem.
+- Doplnění: Nativní `datalist` byl nahrazen vlastním rozbalovacím seznamem s viditelnou šipkou, protože jeho ovládání není mezi prohlížeči jednotné. Tím zůstává výběr existujících hodnot dostupný i ve Firefoxu.
+
+### 2026-10-04 – Řazení a jídelní lístek katalogu
+- Rozhodnutí: Katalog nabídne seznam řazený podle názvu nebo data přidání a samostatný pohled jídelního lístku. V jídelním lístku představuje každá nadkategorie samostatnou stránku, kategorie jsou nadpisy a podkategorie se zobrazí v závorce za názvem jídla.
+- Kontext: Uživatel požádal o přehlednější katalog s časovým řazením a podobou restauračního lístku.
+- Důvod: Tabulka `foods` již obsahuje `created_at`, takže lze datum použít bez změny databázového schématu; seskupení zachová existující hierarchii klasifikace.
+
+### 2026-10-04 – Přechod na příští týden od soboty
+- Rozhodnutí: Při prvním zobrazení plánovací stránky a po volbě „Dnes“ bude od soboty jako první nabídnut následující týden.
+- Kontext: Uživatel plánuje následující týdenní jídla předem a po pátku považuje plán aktuálního týdne za hotový.
+- Důvod: Týdenní rozsahy a jejich nadpisy zůstávají v kalendářním rytmu pondělí až neděle; mění se pouze výběr prvního týdne plánovacího okna.
+
 ### 2026-09-29 – Rozšíření o samostatný modul měsíčního rozpočtu
 - Rozhodnutí: Aplikace bude rozšířena o samostatnou sekci Rozpočet, která pracuje s měsíčním plánem, kategoriemi příjmů a výdajů a transakcemi a je plně oddělena od stávající části Food Planner.
 - Kontext: Klient požadoval funkci pro měsíční plán rozpočtu, evidenci výdajů a upozornění na překročení rozpočtu. Rozpočet má fungovat jako samostatná část aplikace, aby se data jídelního plánu a rozpočtu neovlivňovala.
@@ -104,6 +120,16 @@ Tento soubor je hlavním zdrojem pravdy o projektu. Všechny důležité rozhodn
 - Rozhodnutí: Rozpočet se ukládá do tří tabulek: `budgets`, `budget_categories` a `budget_transactions`.
 - Kontext: Uživatel chtěl SQL dotaz pro vytvoření potřebných tabulek na serveru a požadoval oddělení dat rozpočtu od plánování jídel. Datové struktury musí být připojitelné k existující databázi a mít jednoduchý model pro globální rozpočet.
 - Důvod: Třístupňový model umožňuje mít jeden aktivní rozpočet, definované kategorie s limity a transakce pro jednotlivé dny a měsíce. To je dostatečně jednoduché pro domácnost, ale zároveň rozšiřitelné pro budoucí analýzu a grafy.
+
+### 2026-10-04 – Přepínání modulu a načítání historie rozpočtu
+- Rozhodnutí: Přepínání mezi Food Plannerem a Budget Plannerem je dostupné kliknutím na název aktuálního modulu v horní části levé navigace. Rozhraní rozpočtu načítá celou historii transakcí, aby bylo možné nabídnout měsíce, ve kterých již existují záznamy.
+- Kontext: Uživatel požádal o přesun přepínače z dolní části levé navigace nahoru a o opravu nedostupných transakcí z minulého měsíce.
+- Důvod: Název aplikace poskytuje přímé přepnutí modulu a seznam dostupných měsíců lze spolehlivě sestavit pouze z načtených transakcí; počet domácích záznamů je malý a měsíční přehled zůstává filtrem nad globálním rozpočtem.
+
+### 2026-10-04 – Přesnost částek rozpočtu na celé koruny
+- Rozhodnutí: Limity kategorií a částky transakcí lze zadávat po jednotlivých korunách.
+- Kontext: Dosavadní formuláře vyžadovaly násobky sta korun, což nestačilo pro přesný domácí rozpočet.
+- Důvod: Krok číselných polí odpovídá požadované přesnosti a částky se nadále zobrazují v celých korunách.
 
 ## 3. Záznam změn
 - Všechny navržené úpravy se zapisují sem, a to i v případě, že jsou pouze v prototypové fázi.

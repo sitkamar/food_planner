@@ -77,6 +77,7 @@ const {
   serializeWeekForServer,
   removeSlotFromWeek,
   getStartOfWeek,
+  getFirstVisibleWeekStart,
   buildVisibleWeekWindow,
   shiftVisibleWeeks,
   hydrateSavedWeekData,
@@ -251,6 +252,13 @@ test('vybrané jídlo se ukládá podle food_id a ne podle názvu', () => {
 test('začátek týdne je vždy pondělí', () => {
   assert.equal(formatLocalDate(getStartOfWeek(new Date('2026-09-19T12:00:00+02:00'))), '2026-09-14');
   assert.equal(formatLocalDate(getStartOfWeek(new Date('2026-09-21T12:00:00+02:00'))), '2026-09-21');
+});
+
+test('první viditelný týden se od soboty přesune na následující pondělí', () => {
+  assert.equal(formatLocalDate(getFirstVisibleWeekStart(new Date('2026-10-02T12:00:00'))), '2026-09-28');
+  assert.equal(formatLocalDate(getFirstVisibleWeekStart(new Date('2026-10-03T12:00:00'))), '2026-10-05');
+  assert.equal(formatLocalDate(getFirstVisibleWeekStart(new Date('2026-10-04T12:00:00'))), '2026-10-05');
+  assert.equal(formatLocalDate(getFirstVisibleWeekStart(new Date('2026-10-05T12:00:00'))), '2026-10-05');
 });
 
 test('posun zobrazených týdnů o jeden týden mění všechna data o +7 dní', () => {

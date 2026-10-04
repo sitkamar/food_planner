@@ -240,10 +240,9 @@ function persistBudgetState() {
 
 const budgetState = loadBudgetState();
 
-async function loadBudgetFromServer(monthKey = budgetState.selectedMonth) {
+async function loadBudgetFromServer() {
   try {
-    const query = monthKey ? `?month_key=${encodeURIComponent(monthKey)}` : '';
-    const response = await fetch(`/api/budget${query}`);
+    const response = await fetch('/api/budget');
     const payload = await response.json();
 
     if (!response.ok) {
@@ -623,6 +622,17 @@ function getStartOfWeek(dateInput) {
   return normalizedDate;
 }
 
+function getFirstVisibleWeekStart(dateInput) {
+  const date = new Date(dateInput instanceof Date ? dateInput : new Date(dateInput));
+  const firstVisibleWeek = getStartOfWeek(date);
+
+  if (date.getDay() === 6 || date.getDay() === 0) {
+    firstVisibleWeek.setDate(firstVisibleWeek.getDate() + 7);
+  }
+
+  return firstVisibleWeek;
+}
+
 function createEmptyWeek(startDate) {
   const emptySlots = createDefaultSlotGroups();
 
@@ -730,7 +740,7 @@ function hydrateSavedWeekData(savedWeeks, visibleWeeks = weekPlanData) {
   return visibleWeeks;
 }
 
-const weekPlanData = buildVisibleWeekWindow(getStartOfWeek(new Date()));
+const weekPlanData = buildVisibleWeekWindow(getFirstVisibleWeekStart(new Date()));
 
 function updateVisibleWeekWindow(baseDate) {
   const nextWindow = buildVisibleWeekWindow(baseDate);
@@ -753,7 +763,7 @@ function moveVisibleWeeks(offsetWeeks) {
 }
 
 function jumpToToday() {
-  const today = getStartOfWeek(new Date());
+  const today = getFirstVisibleWeekStart(new Date());
   const nextWindow = buildVisibleWeekWindow(today);
   weekPlanData.length = 0;
   weekPlanData.push(...nextWindow);
@@ -772,8 +782,26 @@ const stockListEl = document.getElementById('stockList');
 const foodForm = document.getElementById('foodForm');
 const foodSupercategorySelect = document.getElementById('foodSupercategory');
 const foodSearch = document.getElementById('foodSearch');
+const foodNameInput = document.getElementById('foodName');
+const foodIdInput = document.getElementById('foodId');
+const foodCategoryInput = document.getElementById('foodCategory');
+const foodSubcategoryInput = document.getElementById('foodSubcategory');
+const foodCategoryOptions = document.getElementById('foodCategoryOptions');
+const foodSubcategoryOptions = document.getElementById('foodSubcategoryOptions');
+const foodCategoryToggle = document.getElementById('foodCategoryToggle');
+const foodSubcategoryToggle = document.getElementById('foodSubcategoryToggle');
+const foodFormTitle = document.getElementById('foodFormTitle');
+const foodSubmitButton = document.getElementById('foodSubmitButton');
+const cancelFoodEditButton = document.getElementById('cancelFoodEditButton');
+const foodSortSelect = document.getElementById('foodSort');
+const foodCatalogListPane = document.getElementById('foodCatalogListPane');
+const foodMenuPane = document.getElementById('foodMenuPane');
+const foodMenuPages = document.getElementById('foodMenuPages');
+const foodMenuPage = document.getElementById('foodMenuPage');
+const foodListModeButton = document.getElementById('foodListModeButton');
+const foodMenuModeButton = document.getElementById('foodMenuModeButton');
 const navButtons = document.querySelectorAll('.nav-item');
-const appSwitchButtons = document.querySelectorAll('.app-switch-btn');
+const appToggleButton = document.getElementById('appToggleButton');
 const moduleNavs = document.querySelectorAll('.module-nav');
 const freezerForm = document.getElementById('freezerForm');
 const stockForm = document.getElementById('stockForm');
@@ -816,6 +844,8 @@ const budgetTransactionSubmitBtn = document.getElementById('budgetTransactionSub
 const budgetTrendChart = document.getElementById('budgetTrendChart');
 
 let availableSupercategories = [];
+let foodCatalogMode = 'list';
+let activeFoodMenuPage = '';
 
 function normalizeSupercategory(value = '') {
   return String(value || '')
@@ -880,10 +910,12 @@ async function loadFoodCatalog() {
       foodType: item.foodType || item.supercategory,
       category: item.category,
       subcategory: item.subcategory,
+      createdAt: item.createdAt || item.created_at || null,
       classification: item.classification,
       fullLabel: item.fullLabel
     }));
 
+    refreshFoodTaxonomyOptions();
     populateInventoryFoodSelects();
     renderFoodCatalog();
     renderWeekPlan();
@@ -925,37 +957,259 @@ async function loadSupercategoryOptions() {
   }
 }
 
+function escapeFoodOption(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  })[character]);
+}
+
+function sortFoodItems(items) {
+  const sortMode = foodSortSelect?.value || 'name';
+  return [...items].sort((first, second) => {
+    if (sortMode === 'newest' || sortMode === 'oldest') {
+      const firstDate = Date.parse(first.createdAt || '') || 0;
+      const secondDate = Date.parse(second.createdAt || '') || 0;
+      const dateOrder = sortMode === 'newest' ? secondDate - firstDate : firstDate - secondDate;
+      if (dateOrder !== 0) {
+        return dateOrder;
+      }
+    }
+
+    return String(first.name || '').localeCompare(String(second.name || ''), 'cs');
+  });
+}
+
+function formatFoodDate(value) {
+  const date = new Date(value);
+  if (!value || !Number.isFinite(date.getTime())) {
+    return 'datum neuvedeno';
+  }
+
+  return new Intl.DateTimeFormat('cs-CZ', { dateStyle: 'medium' }).format(date);
+}
+
+function renderFoodList(foods) {
+  if (!foods.length) {
+    foodCatalogEl.innerHTML = '<li><div><strong>Žádná jídla</strong><br /><small>Pro aktuální hledání nebyla nalezena žádná položka.</small></div></li>';
+    return;
+  }
+
+  foodCatalogEl.innerHTML = foods
+    .map((food) => {
+      const foodName = escapeFoodOption(food.name || 'Bez názvu');
+      const classification = escapeFoodOption(food.fullLabel || food.classification || food.supercategory || 'Bez kategorie');
+      return `
+        <li>
+          <div>
+            <strong>${foodName}</strong><br />
+            <small>${classification} · Přidáno ${formatFoodDate(food.createdAt)}</small>
+          </div>
+          <button class="secondary" type="button" data-food-edit-id="${escapeFoodOption(food.id)}" aria-label="Upravit ${foodName}">Upravit</button>
+        </li>
+      `;
+    })
+    .join('');
+}
+
+function renderFoodMenu(foods) {
+  const pageNames = [...new Set(foods.map((food) => food.supercategory || 'Bez nadkategorie'))]
+    .sort((first, second) => first.localeCompare(second, 'cs'));
+
+  if (!pageNames.length) {
+    activeFoodMenuPage = '';
+    foodMenuPages.innerHTML = '';
+    foodMenuPage.innerHTML = '<p class="food-menu-empty">Pro aktuální hledání nebyla nalezena žádná jídla.</p>';
+    return;
+  }
+
+  if (!pageNames.includes(activeFoodMenuPage)) {
+    activeFoodMenuPage = pageNames[0];
+  }
+
+  foodMenuPages.innerHTML = pageNames.map((pageName) => `
+    <button class="food-menu-tab${pageName === activeFoodMenuPage ? ' active' : ''}" type="button" role="tab" aria-selected="${pageName === activeFoodMenuPage}" data-food-menu-page="${escapeFoodOption(pageName)}">${escapeFoodOption(pageName)}</button>
+  `).join('');
+
+  const foodsOnPage = sortFoodItems(foods.filter((food) => (food.supercategory || 'Bez nadkategorie') === activeFoodMenuPage));
+  const categoryGroups = new Map();
+  foodsOnPage.forEach((food) => {
+    const category = food.category || 'Bez kategorie';
+    if (!categoryGroups.has(category)) {
+      categoryGroups.set(category, []);
+    }
+    categoryGroups.get(category).push(food);
+  });
+
+  const categories = [...categoryGroups.keys()].sort((first, second) => first.localeCompare(second, 'cs'));
+  foodMenuPage.innerHTML = `
+    <header class="food-menu-heading">
+      <p class="eyebrow">Jídelní lístek</p>
+      <h3>${escapeFoodOption(activeFoodMenuPage)}</h3>
+    </header>
+    ${categories.map((category) => `
+      <section class="food-menu-category">
+        <h4>${escapeFoodOption(category)}</h4>
+        <ul class="food-menu-dishes">
+          ${categoryGroups.get(category).map((food) => `
+            <li>
+              <span class="food-menu-dish-name">${escapeFoodOption(food.name || 'Bez názvu')}</span>
+              ${food.subcategory ? `<span class="food-menu-dish-subcategory">(${escapeFoodOption(food.subcategory)})</span>` : ''}
+              <button class="secondary" type="button" data-food-edit-id="${escapeFoodOption(food.id)}" aria-label="Upravit ${escapeFoodOption(food.name || 'jídlo')}">Upravit</button>
+            </li>
+          `).join('')}
+        </ul>
+      </section>
+    `).join('')}
+  `;
+}
+
 function renderFoodCatalog() {
   if (!foodCatalogEl) {
     return;
   }
 
-  const query = (foodSearch?.value || '').trim().toLowerCase();
-  const visibleFoods = !query
-    ? [...foodCatalog]
-    : foodCatalog.filter((food) => {
-        const haystack = `${food.name} ${food.category || ''} ${food.supercategory || ''} ${food.subcategory || ''}`.toLowerCase();
-        return haystack.includes(query);
-      });
+  const query = (foodSearch?.value || '').trim().toLocaleLowerCase('cs');
+  const visibleFoods = foodCatalog.filter((food) => {
+    const haystack = `${food.name} ${food.category || ''} ${food.supercategory || ''} ${food.subcategory || ''}`.toLocaleLowerCase('cs');
+    return !query || haystack.includes(query);
+  });
 
-  if (!visibleFoods.length) {
-    foodCatalogEl.innerHTML = '<li><div><strong>Žádná jídla</strong><br /><small>Pro aktuální hledání nebyla nalezena žádná položka.</small></div></li>';
+  renderFoodList(sortFoodItems(visibleFoods));
+  renderFoodMenu(visibleFoods);
+}
+
+function setFoodCatalogMode(mode) {
+  foodCatalogMode = mode === 'menu' ? 'menu' : 'list';
+  const showMenu = foodCatalogMode === 'menu';
+
+  foodCatalogListPane.classList.toggle('hidden', showMenu);
+  foodMenuPane.classList.toggle('hidden', !showMenu);
+  foodListModeButton.classList.toggle('active', !showMenu);
+  foodListModeButton.setAttribute('aria-pressed', String(!showMenu));
+  foodMenuModeButton.classList.toggle('active', showMenu);
+  foodMenuModeButton.setAttribute('aria-pressed', String(showMenu));
+}
+
+function closeFoodSuggestions(input, list, toggle) {
+  list.classList.add('hidden');
+  input.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-expanded', 'false');
+}
+
+function renderFoodDatalist(list, values, input, toggle) {
+  if (!list || !input || !toggle || !list.classList) {
     return;
   }
 
-  foodCatalogEl.innerHTML = visibleFoods
-    .map(
-      (food) => `
-        <li>
-          <div>
-            <strong>${food.name}</strong><br />
-            <small>${food.fullLabel || food.classification || food.supercategory || 'Bez kategorie'}</small>
-          </div>
-          <button class="secondary" type="button">Přidat</button>
-        </li>
-      `
-    )
+  const uniqueValues = new Map();
+  values.forEach((value) => {
+    const normalizedValue = String(value || '').trim();
+    if (normalizedValue) {
+      uniqueValues.set(normalizedValue.toLocaleLowerCase('cs'), normalizedValue);
+    }
+  });
+
+  const query = input.value.trim().toLocaleLowerCase('cs');
+  const matchingValues = [...uniqueValues.values()]
+    .sort((first, second) => first.localeCompare(second, 'cs'))
+    .filter((value) => !query || value.toLocaleLowerCase('cs').includes(query));
+
+  list.innerHTML = matchingValues
+    .map((value) => `<button class="food-suggestion" type="button" role="option" data-food-suggestion="${escapeFoodOption(value)}">${escapeFoodOption(value)}</button>`)
     .join('');
+
+  if (!matchingValues.length) {
+    closeFoodSuggestions(input, list, toggle);
+  }
+}
+
+function refreshFoodTaxonomyOptions() {
+  const selectedSupercategory = foodSupercategorySelect?.value.trim() || '';
+  const foodsInSupercategory = foodCatalog.filter((food) => food.supercategory === selectedSupercategory);
+  const selectedCategory = foodCategoryInput?.value.trim().toLocaleLowerCase('cs') || '';
+  const foodsInCategory = foodsInSupercategory.filter((food) => String(food.category || '').trim().toLocaleLowerCase('cs') === selectedCategory);
+
+  renderFoodDatalist(foodCategoryOptions, foodsInSupercategory.map((food) => food.category), foodCategoryInput, foodCategoryToggle);
+  renderFoodDatalist(foodSubcategoryOptions, foodsInCategory.map((food) => food.subcategory), foodSubcategoryInput, foodSubcategoryToggle);
+}
+
+function showFoodSuggestions(input, list, toggle) {
+  refreshFoodTaxonomyOptions();
+  if (list.children.length) {
+    list.classList.remove('hidden');
+    input.setAttribute('aria-expanded', 'true');
+    toggle.setAttribute('aria-expanded', 'true');
+  }
+}
+
+function toggleFoodSuggestions(input, list, toggle) {
+  if (!list.classList.contains('hidden')) {
+    closeFoodSuggestions(input, list, toggle);
+    return;
+  }
+
+  input.focus();
+  showFoodSuggestions(input, list, toggle);
+}
+
+function selectFoodSuggestion(event, input, list, toggle) {
+  const option = event.target.closest('[data-food-suggestion]');
+  if (!option) {
+    return;
+  }
+
+  input.value = option.dataset.foodSuggestion;
+  closeFoodSuggestions(input, list, toggle);
+  refreshFoodTaxonomyOptions();
+}
+
+function handleFoodSuggestionKeydown(event, input, list, toggle) {
+  if (event.key === 'Escape') {
+    closeFoodSuggestions(input, list, toggle);
+    return;
+  }
+
+  if (event.key === 'ArrowDown' && !list.classList.contains('hidden')) {
+    event.preventDefault();
+    list.querySelector('.food-suggestion')?.focus();
+  }
+}
+
+function resetFoodForm() {
+  foodForm.reset();
+  foodIdInput.value = '';
+  foodFormTitle.textContent = 'Přidat nové jídlo';
+  foodSubmitButton.textContent = 'Přidat do katalogu';
+  cancelFoodEditButton.classList.add('hidden');
+
+  const defaultSupercategory = availableSupercategories[0]?.name || 'Hlavní jídlo';
+  if (foodSupercategorySelect) {
+    foodSupercategorySelect.value = defaultSupercategory;
+  }
+
+  refreshFoodTaxonomyOptions();
+}
+
+function startFoodEdit(foodId) {
+  const food = foodCatalog.find((item) => String(item.id) === String(foodId));
+  if (!food) {
+    return;
+  }
+
+  foodIdInput.value = String(food.id);
+  foodNameInput.value = food.name || '';
+  foodSupercategorySelect.value = food.supercategory || '';
+  foodCategoryInput.value = food.category || '';
+  foodSubcategoryInput.value = food.subcategory || '';
+  foodFormTitle.textContent = 'Upravit jídlo';
+  foodSubmitButton.textContent = 'Uložit změny';
+  cancelFoodEditButton.classList.remove('hidden');
+  refreshFoodTaxonomyOptions();
+  foodNameInput.focus();
 }
 
 function renderInventorySummary() {
@@ -1713,9 +1967,12 @@ function setActiveApp(appName = 'foodplanner') {
     document.body.dataset.activeApp = nextApp;
   }
 
-  appSwitchButtons.forEach((button) => {
-    button.classList.toggle('active', button.dataset.appSwitch === nextApp);
-  });
+  if (appToggleButton) {
+    const activeTitle = nextApp === 'budget' ? 'Budget Planner' : 'Food Planner';
+    const nextTitle = nextApp === 'budget' ? 'Food Planner' : 'Budget Planner';
+    appToggleButton.textContent = activeTitle;
+    appToggleButton.setAttribute('aria-label', `Přepnout na ${nextTitle}`);
+  }
 
   moduleNavs.forEach((nav) => {
     nav.classList.toggle('hidden', nav.dataset.moduleNav !== nextApp);
@@ -1770,16 +2027,22 @@ if (typeof document !== 'undefined' && document.body) {
 navButtons.forEach((button) => {
   button.addEventListener('click', () => {
     const nextApp = button.dataset.app || 'foodplanner';
-    setActiveApp(nextApp);
+    const activeApp = document.body.dataset.activeApp || 'foodplanner';
+
+    if (activeApp !== nextApp) {
+      setActiveApp(nextApp);
+    }
+
+    setActiveView(button.dataset.view || (nextApp === 'budget' ? 'budget' : 'overview'));
   });
 });
 
-appSwitchButtons.forEach((button) => {
-  button.addEventListener('click', () => {
-    const nextApp = button.dataset.appSwitch || 'foodplanner';
-    setActiveApp(nextApp);
+if (appToggleButton) {
+  appToggleButton.addEventListener('click', () => {
+    const activeApp = document.body.dataset.activeApp || 'foodplanner';
+    setActiveApp(activeApp === 'budget' ? 'foodplanner' : 'budget');
   });
-});
+}
 
 if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
   loadBudgetFromServer();
@@ -1788,12 +2051,13 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
 foodForm.addEventListener('submit', async (event) => {
   event.preventDefault();
 
-  const name = document.getElementById('foodName').value.trim();
+  const editingFoodId = foodIdInput.value;
+  const name = foodNameInput.value.trim();
   const supercategory = foodSupercategorySelect?.value.trim() || 'Hlavní jídlo';
   const selectedSupercategoryOption = foodSupercategorySelect?.selectedOptions?.[0];
   const foodType = selectedSupercategoryOption?.dataset?.foodTypeName || supercategory;
-  const category = document.getElementById('foodCategory').value.trim();
-  const subcategory = document.getElementById('foodSubcategory').value.trim();
+  const category = foodCategoryInput.value.trim();
+  const subcategory = foodSubcategoryInput.value.trim();
 
   if (!name) {
     return;
@@ -1808,8 +2072,8 @@ foodForm.addEventListener('submit', async (event) => {
   });
 
   try {
-    const response = await fetch('/api/foods', {
-      method: 'POST',
+    const response = await fetch(editingFoodId ? `/api/foods/${encodeURIComponent(editingFoodId)}` : '/api/foods', {
+      method: editingFoodId ? 'PUT' : 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
@@ -1833,40 +2097,95 @@ foodForm.addEventListener('submit', async (event) => {
       classification: [payload.supercategory, payload.category, payload.subcategory].filter(Boolean).join(' / ') || 'vlastní'
     };
 
-    foodCatalog.unshift({
+    const normalizedFood = {
       id: savedFood.id,
       name: savedFood.name,
       supercategory: savedFood.supercategory || payload.supercategory,
       foodType: savedFood.foodType || savedFood.food_type_name || payload.food_type_name || payload.supercategory,
       category: savedFood.category || payload.category,
       subcategory: savedFood.subcategory || payload.subcategory || null,
+      createdAt: savedFood.createdAt || savedFood.created_at || new Date().toISOString(),
       fullLabel: savedFood.fullLabel || [savedFood.supercategory || payload.supercategory, savedFood.category || payload.category, savedFood.subcategory || payload.subcategory].filter(Boolean).join(' · ') || 'vlastní',
       classification: savedFood.classification || [savedFood.supercategory || payload.supercategory, savedFood.category || payload.category, savedFood.subcategory || payload.subcategory].filter(Boolean).join(' / ') || 'vlastní'
-    });
+    };
 
+    const existingFoodIndex = foodCatalog.findIndex((food) => String(food.id) === String(normalizedFood.id));
+    if (existingFoodIndex >= 0) {
+      foodCatalog[existingFoodIndex] = normalizedFood;
+    } else {
+      foodCatalog.unshift(normalizedFood);
+    }
+
+    refreshFoodTaxonomyOptions();
     renderFoodCatalog();
     renderWeekPlan();
-    foodForm.reset();
-    document.getElementById('foodName').focus();
-
-    const fallbackValue = availableSupercategories[0]?.name || 'Hlavní jídlo';
-    if (foodSupercategorySelect) {
-      foodSupercategorySelect.value = fallbackValue;
-    }
+    resetFoodForm();
+    foodNameInput.focus();
   } catch (error) {
-    console.error('Chyba při ukládání nového jídla:', error);
+    console.error('Chyba při ukládání jídla:', error);
     window.alert(error.message || 'Nepodařilo se uložit jídlo do databáze.');
   }
 });
+
+foodCatalogEl.addEventListener('click', (event) => {
+  const editButton = event.target.closest('[data-food-edit-id]');
+  if (editButton) {
+    startFoodEdit(editButton.dataset.foodEditId);
+  }
+});
+
+cancelFoodEditButton.addEventListener('click', resetFoodForm);
+
+foodSupercategorySelect.addEventListener('change', refreshFoodTaxonomyOptions);
+
+foodCategoryInput.addEventListener('focus', () => showFoodSuggestions(foodCategoryInput, foodCategoryOptions, foodCategoryToggle));
+foodCategoryInput.addEventListener('input', () => showFoodSuggestions(foodCategoryInput, foodCategoryOptions, foodCategoryToggle));
+foodSubcategoryInput.addEventListener('focus', () => showFoodSuggestions(foodSubcategoryInput, foodSubcategoryOptions, foodSubcategoryToggle));
+foodSubcategoryInput.addEventListener('input', () => showFoodSuggestions(foodSubcategoryInput, foodSubcategoryOptions, foodSubcategoryToggle));
+foodCategoryInput.addEventListener('keydown', (event) => handleFoodSuggestionKeydown(event, foodCategoryInput, foodCategoryOptions, foodCategoryToggle));
+foodSubcategoryInput.addEventListener('keydown', (event) => handleFoodSuggestionKeydown(event, foodSubcategoryInput, foodSubcategoryOptions, foodSubcategoryToggle));
+
+foodCategoryToggle.addEventListener('click', () => toggleFoodSuggestions(foodCategoryInput, foodCategoryOptions, foodCategoryToggle));
+foodSubcategoryToggle.addEventListener('click', () => toggleFoodSuggestions(foodSubcategoryInput, foodSubcategoryOptions, foodSubcategoryToggle));
+foodCategoryOptions.addEventListener('click', (event) => selectFoodSuggestion(event, foodCategoryInput, foodCategoryOptions, foodCategoryToggle));
+foodSubcategoryOptions.addEventListener('click', (event) => selectFoodSuggestion(event, foodSubcategoryInput, foodSubcategoryOptions, foodSubcategoryToggle));
+
+if (typeof document.addEventListener === 'function') {
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('.food-combobox')) {
+      closeFoodSuggestions(foodCategoryInput, foodCategoryOptions, foodCategoryToggle);
+      closeFoodSuggestions(foodSubcategoryInput, foodSubcategoryOptions, foodSubcategoryToggle);
+    }
+  });
+}
 
 if (foodSearch) {
   foodSearch.addEventListener('input', renderFoodCatalog);
 }
 
+foodSortSelect.addEventListener('change', renderFoodCatalog);
+foodListModeButton.addEventListener('click', () => setFoodCatalogMode('list'));
+foodMenuModeButton.addEventListener('click', () => setFoodCatalogMode('menu'));
+
+foodMenuPages.addEventListener('click', (event) => {
+  const pageButton = event.target.closest('[data-food-menu-page]');
+  if (pageButton) {
+    activeFoodMenuPage = pageButton.dataset.foodMenuPage;
+    renderFoodCatalog();
+  }
+});
+
+foodMenuPage.addEventListener('click', (event) => {
+  const editButton = event.target.closest('[data-food-edit-id]');
+  if (editButton) {
+    startFoodEdit(editButton.dataset.foodEditId);
+  }
+});
+
 if (budgetMonthPicker) {
   budgetMonthPicker.addEventListener('change', async (event) => {
     budgetState.selectedMonth = event.target.value || budgetState.selectedMonth;
-    await loadBudgetFromServer(budgetState.selectedMonth);
+    await loadBudgetFromServer();
     renderBudgetView();
   });
 }
@@ -1878,7 +2197,7 @@ if (budgetPrevMonthBtn) {
     const next = new Date(year, month - 1, 1);
     next.setMonth(next.getMonth() - 1);
     budgetState.selectedMonth = budgetLogic.getMonthKey ? budgetLogic.getMonthKey(next) : `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
-    await loadBudgetFromServer(budgetState.selectedMonth);
+    await loadBudgetFromServer();
     renderBudgetView();
   });
 }
@@ -1890,7 +2209,7 @@ if (budgetNextMonthBtn) {
     const next = new Date(year, month - 1, 1);
     next.setMonth(next.getMonth() + 1);
     budgetState.selectedMonth = budgetLogic.getMonthKey ? budgetLogic.getMonthKey(next) : `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
-    await loadBudgetFromServer(budgetState.selectedMonth);
+    await loadBudgetFromServer();
     renderBudgetView();
   });
 }
@@ -1920,7 +2239,7 @@ if (budgetCategoryForm) {
     try {
       const response = await saveBudgetCategoryToServer(categoryPayload, categoryId || undefined);
       if (response) {
-        await loadBudgetFromServer(budgetState.selectedMonth);
+        await loadBudgetFromServer();
       }
     } catch (error) {
       console.error('Chyba při ukládání kategorie rozpočtu:', error);
@@ -1954,7 +2273,7 @@ if (budgetTransactionForm) {
     const category = budgetState.categories.find((item) => String(item.id) === String(categoryId));
     const payload = {
       category_id: categoryId,
-      month_key: budgetState.selectedMonth,
+      month_key: date.slice(0, 7),
       transaction_type: type,
       amount,
       description,
@@ -1965,7 +2284,7 @@ if (budgetTransactionForm) {
     try {
       const response = await saveBudgetTransactionToServer(payload, transactionId || undefined);
       if (response) {
-        await loadBudgetFromServer(budgetState.selectedMonth);
+        await loadBudgetFromServer();
       }
     } catch (error) {
       console.error('Chyba při ukládání transakce rozpočtu:', error);
@@ -2022,7 +2341,7 @@ if (budgetTransactionList) {
       const transactionId = deleteButton.dataset.transactionId;
       try {
         await deleteBudgetTransactionFromServer(transactionId);
-        await loadBudgetFromServer(budgetState.selectedMonth);
+        await loadBudgetFromServer();
       } catch (error) {
         console.error('Chyba při mazání transakce:', error);
         window.alert(error.message || 'Nepodařilo se odstranit transakci.');
@@ -2347,6 +2666,7 @@ if (typeof module !== 'undefined' && module.exports) {
     removeSlotFromWeek,
     serializeWeekForServer,
     getStartOfWeek,
+    getFirstVisibleWeekStart,
     buildVisibleWeekWindow,
     shiftVisibleWeeks,
     hydrateSavedWeekData,

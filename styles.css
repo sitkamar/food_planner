@@ -77,9 +77,16 @@ button {
   opacity: 0.7;
 }
 
-.brand-wrap h2 {
+.brand-app-toggle {
   margin: 4px 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
   font-size: 1.2rem;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
 }
 
 .nav {
@@ -106,29 +113,9 @@ button {
   background: rgba(126, 201, 170, 0.2);
 }
 
-.app-switcher {
-  margin-top: auto;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  padding-top: 18px;
-  border-top: 1px solid rgba(255, 255, 255, 0.12);
-}
-
-.app-switch-btn {
-  background: rgba(255,255,255,0.04);
-  color: #edf9f3;
-  padding: 11px 10px;
-  border-radius: 12px;
-  font-size: 0.82rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-}
-
-.app-switch-btn.active,
-.app-switch-btn:hover {
-  background: linear-gradient(135deg, #dff3e8 0%, #7ec9aa 100%);
-  color: #163b2f;
+.brand-app-toggle:hover,
+.brand-app-toggle:focus-visible {
+  color: #b9ead4;
 }
 
 .sidebar-note {
@@ -270,6 +257,64 @@ button {
 
 .filter-bar {
   margin-bottom: 16px;
+}
+
+.catalog-controls {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.catalog-search {
+  flex: 1;
+  min-width: 220px;
+}
+
+.catalog-actions {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+}
+
+.catalog-view-switch {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel-alt);
+}
+
+.catalog-view-button {
+  padding: 8px 11px;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.catalog-view-button.active {
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 1px 4px rgba(28, 54, 46, 0.12);
+}
+
+.catalog-sort {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.catalog-sort select {
+  min-width: 150px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f9fbfa;
+  color: var(--text);
 }
 
 .search-field {
@@ -631,6 +676,90 @@ button {
   overflow: auto;
 }
 
+.food-menu-pages {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--line);
+}
+
+.food-menu-tab {
+  flex: 0 0 auto;
+  padding: 12px 14px;
+  border-bottom: 3px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.food-menu-tab.active {
+  border-bottom-color: var(--primary);
+  color: var(--primary-dark);
+  font-weight: 700;
+}
+
+.food-menu-page {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 28px 20px 36px;
+}
+
+.food-menu-heading {
+  margin-bottom: 28px;
+  text-align: center;
+}
+
+.food-menu-heading h3 {
+  margin: 6px 0 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.65rem;
+  font-weight: 500;
+}
+
+.food-menu-category {
+  margin-top: 22px;
+}
+
+.food-menu-category h4 {
+  margin: 0 0 8px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--line);
+  color: var(--primary-dark);
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.food-menu-dishes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.food-menu-dishes li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 7px 0;
+  border-bottom: 1px dotted var(--line);
+}
+
+.food-menu-dish-name {
+  min-width: 0;
+}
+
+.food-menu-dish-subcategory {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.food-menu-empty {
+  color: var(--muted);
+  text-align: center;
+}
+
 .mini-form {
   margin-top: 16px;
   display: flex;
@@ -653,6 +782,81 @@ button {
   padding: 10px 12px;
   background: #f9fbfa;
   color: var(--text);
+}
+
+.food-combobox {
+  position: relative;
+  width: 100%;
+}
+
+.food-combobox-field {
+  display: flex;
+  width: 100%;
+}
+
+.mini-form .food-combobox-field input {
+  min-width: 0;
+  flex: 1;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.food-combobox-toggle {
+  display: grid;
+  width: 42px;
+  flex: 0 0 42px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-left: 0;
+  border-radius: 0 10px 10px 0;
+  background: #f9fbfa;
+  color: var(--muted);
+}
+
+.food-combobox-toggle:hover,
+.food-combobox-toggle[aria-expanded="true"] {
+  background: var(--panel-alt);
+  color: var(--text);
+}
+
+.food-combobox-chevron {
+  width: 8px;
+  height: 8px;
+  margin-top: -4px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg);
+}
+
+.food-suggestions {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  right: 0;
+  left: 0;
+  max-height: 210px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.food-suggestion {
+  display: block;
+  width: 100%;
+  padding: 9px 10px;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.food-suggestion:hover,
+.food-suggestion:focus-visible {
+  outline: none;
+  background: var(--panel-alt);
 }
 
 .inline-fields {
@@ -708,6 +912,39 @@ button {
 
   .inline-fields {
     grid-template-columns: 1fr;
+  }
+
+  .catalog-controls,
+  .catalog-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .catalog-search {
+    min-width: 0;
+  }
+
+  .catalog-view-switch {
+    align-self: flex-start;
+  }
+
+  .food-menu-page {
+    padding: 22px 4px 28px;
+  }
+
+  .food-menu-dishes li {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 5px 10px;
+  }
+
+  .food-menu-dish-subcategory {
+    grid-row: 2;
+    grid-column: 1;
+  }
+
+  .food-menu-dishes li button {
+    grid-row: 1 / span 2;
+    grid-column: 2;
   }
 }
 
