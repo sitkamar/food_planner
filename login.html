@@ -125,6 +125,19 @@
 
       .message.error { color: var(--danger); }
       .message.success { color: var(--primary-dark); }
+
+      [hidden] { display: none !important; }
+
+      .text-button {
+        width: auto;
+        padding: 6px 0;
+        margin-top: 8px;
+        background: transparent;
+        color: var(--primary-dark);
+        font-size: 0.9rem;
+      }
+
+      .text-button:hover { background: transparent; text-decoration: underline; }
     </style>
   </head>
   <body>
@@ -136,7 +149,7 @@
         </div>
       </div>
 
-      <p class="subtitle">Přístup je omezen na pozvané e-maily.</p>
+      <p id="authSubtitle" class="subtitle">Přístup je omezen na pozvané e-maily.</p>
 
       <div class="switcher" aria-label="Přepínání typu přihlášení">
         <button id="loginTab" class="active" type="button">Přihlásit se</button>
@@ -144,14 +157,24 @@
       </div>
 
       <form id="authForm">
-        <label for="email">E-mail</label>
-        <input id="email" name="email" type="email" placeholder="vas-email@example.com" required />
+        <div id="emailField">
+          <label for="email">E-mail</label>
+          <input id="email" name="email" type="email" placeholder="vas-email@example.com" required />
+        </div>
 
-        <label for="password">Heslo</label>
-        <input id="password" name="password" type="password" placeholder="Minimálně 6 znaků" required />
+        <div id="passwordField">
+          <label id="passwordLabel" for="password">Heslo</label>
+          <input id="password" name="password" type="password" placeholder="Minimálně 6 znaků" required />
+        </div>
+
+        <div id="confirmPasswordField" hidden>
+          <label for="confirmPassword">Potvrzení nového hesla</label>
+          <input id="confirmPassword" name="confirmPassword" type="password" placeholder="Zadejte nové heslo znovu" autocomplete="new-password" />
+        </div>
 
         <button id="submitBtn" type="submit">Přihlásit se</button>
       </form>
+      <button id="forgotPasswordBtn" class="text-button" type="button">Zapomněli jste heslo?</button>
 
       <div id="message" class="message" aria-live="polite"></div>
     </main>
@@ -160,11 +183,18 @@
       const authForm = document.getElementById('authForm');
       const emailInput = document.getElementById('email');
       const passwordInput = document.getElementById('password');
+      const confirmPasswordInput = document.getElementById('confirmPassword');
       const message = document.getElementById('message');
+      const authSubtitle = document.getElementById('authSubtitle');
+      const emailField = document.getElementById('emailField');
+      const passwordLabel = document.getElementById('passwordLabel');
+      const confirmPasswordField = document.getElementById('confirmPasswordField');
       const loginTab = document.getElementById('loginTab');
       const signupTab = document.getElementById('signupTab');
       const submitBtn = document.getElementById('submitBtn');
+      const forgotPasswordBtn = document.getElementById('forgotPasswordBtn');
       let currentMode = 'login';
+      let supabaseClientPromise;
 
       function setMessage(text, type = '') {
         message.textContent = text;
@@ -177,28 +207,61 @@
       function setMode(mode) {
         currentMode = mode;
         const isLogin = mode === 'login';
+        const isRecovery = mode === 'recovery';
 
+        document.querySelector('.switcher').hidden = isRecovery;
+        emailField.hidden = isRecovery;
+        emailInput.required = !isRecovery;
+        passwordLabel.textContent = isRecovery ? 'Nové heslo' : 'Heslo';
+        passwordInput.autocomplete = isRecovery ? 'new-password' : 'current-password';
+        confirmPasswordField.hidden = !isRecovery;
+        confirmPasswordInput.required = isRecovery;
+        forgotPasswordBtn.hidden = !isLogin;
         loginTab.classList.toggle('active', isLogin);
         signupTab.classList.toggle('active', !isLogin);
-        submitBtn.textContent = isLogin ? 'Přihlásit se' : 'Vytvořit účet';
-        setMessage(isLogin ? 'Přihlaste se pomocí e-mailu a hesla.' : 'Vytvořte si účet pouze pro pozvané e-maily.');
+        submitBtn.textContent = isRecovery ? 'Uložit nové heslo' : isLogin ? 'Přihlásit se' : 'Vytvořit účet';
+        authSubtitle.textContent = isRecovery
+          ? 'Zvolte si nové heslo k účtu.'
+          : 'Přístup je omezen na pozvané e-maily.';
+        setMessage(isRecovery
+          ? 'Odkaz pro obnovu hesla byl ověřen. Zadejte nové heslo.'
+          : isLogin
+            ? 'Přihlaste se pomocí e-mailu a hesla.'
+            : 'Vytvořte si účet pouze pro pozvané e-maily.');
       }
 
       async function initSupabase() {
-        const response = await fetch('/api/config');
-        const config = await response.json();
+        if (!supabaseClientPromise) {
+          supabaseClientPromise = (async () => {
+            const response = await fetch('/api/config');
+            const config = await response.json();
 
-        if (!config.supabaseUrl || !config.supabasePublishableKey) {
-          throw new Error('Supabase URL nebo publishable key chybí. Nastav je v .env souboru.');
+            if (!config.supabaseUrl || !config.supabasePublishableKey) {
+              throw new Error('Supabase URL nebo publishable key chybí. Nastav je v .env souboru.');
+            }
+
+            const client = window.supabase.createClient(config.supabaseUrl, config.supabasePublishableKey, {
+              auth: {
+                persistSession: true,
+                autoRefreshToken: true,
+                detectSessionInUrl: true
+              }
+            });
+
+            client.auth.onAuthStateChange((event) => {
+              if (event === 'PASSWORD_RECOVERY') {
+                setMode('recovery');
+              }
+            });
+
+            return client;
+          })().catch((error) => {
+            supabaseClientPromise = null;
+            throw error;
+          });
         }
 
-        return window.supabase.createClient(config.supabaseUrl, config.supabasePublishableKey, {
-          auth: {
-            persistSession: true,
-            autoRefreshToken: true,
-            detectSessionInUrl: true
-          }
-        });
+        return supabaseClientPromise;
       }
 
       async function verifyInvitation(email) {
@@ -220,6 +283,10 @@
       async function checkExistingSession() {
         try {
           const supabase = await initSupabase();
+          if (currentMode === 'recovery') {
+            return;
+          }
+
           const { data: { session } } = await supabase.auth.getSession();
 
           if (session) {
@@ -229,7 +296,7 @@
               }
             });
 
-            if (accessCheck.ok) {
+            if (accessCheck.ok && currentMode !== 'recovery') {
               window.location.href = '/';
               return;
             }
@@ -241,20 +308,69 @@
 
       loginTab.addEventListener('click', () => setMode('login'));
       signupTab.addEventListener('click', () => setMode('signup'));
+      forgotPasswordBtn.addEventListener('click', async () => {
+        const email = emailInput.value.trim().toLowerCase();
+        if (!email) {
+          setMessage('Nejprve zadejte e-mailovou adresu.', 'error');
+          emailInput.focus();
+          return;
+        }
+
+        forgotPasswordBtn.disabled = true;
+        setMessage('Odesílám žádost o obnovu hesla...');
+        try {
+          const supabase = await initSupabase();
+          const { error } = await supabase.auth.resetPasswordForEmail(email, {
+            redirectTo: `${window.location.origin}/login.html`
+          });
+          if (error) {
+            throw error;
+          }
+
+          setMessage('Pokud účet existuje, brzy obdržíte e-mail s odkazem pro obnovu hesla.', 'success');
+        } catch (error) {
+          setMessage(error.message || 'Žádost o obnovu hesla se nepodařilo odeslat.', 'error');
+        } finally {
+          forgotPasswordBtn.disabled = false;
+        }
+      });
 
       authForm.addEventListener('submit', async (event) => {
         event.preventDefault();
 
         const email = emailInput.value.trim().toLowerCase();
-        const password = passwordInput.value.trim();
+        const password = currentMode === 'recovery' ? passwordInput.value : passwordInput.value.trim();
 
-        if (!email || !password) {
+        if ((currentMode !== 'recovery' && !email) || !password) {
           setMessage('Zadejte e-mail i heslo.', 'error');
           return;
         }
 
         if (password.length < 6) {
           setMessage('Heslo musí mít alespoň 6 znaků.', 'error');
+          return;
+        }
+
+        if (currentMode === 'recovery' && password !== confirmPasswordInput.value) {
+          setMessage('Zadaná hesla se neshodují.', 'error');
+          return;
+        }
+
+        if (currentMode === 'recovery') {
+          setMessage('Ukládám nové heslo...');
+          try {
+            const supabase = await initSupabase();
+            const { error } = await supabase.auth.updateUser({ password });
+            if (error) {
+              throw error;
+            }
+
+            setMessage('Heslo bylo změněno. Přesměrování do aplikace...', 'success');
+            submitBtn.disabled = true;
+            setTimeout(() => window.location.href = '/', 900);
+          } catch (error) {
+            setMessage(error.message || 'Nové heslo se nepodařilo uložit.', 'error');
+          }
           return;
         }
 

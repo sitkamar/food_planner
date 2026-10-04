@@ -173,6 +173,11 @@ Tento soubor je hlavním zdrojem pravdy o projektu. Všechny důležité rozhodn
 - Kontext: Uživatel požádal o rozdělení rozpočtové části do tří sekcí v levé navigaci a popsal jejich hlavní úlohy.
 - Důvod: Oddělení každodenního přehledu, evidence jednotlivých transakcí a správy rozpočtových kategorií zjednodušuje orientaci a ponechává stávající model globálních kategorií s měsíčním filtrem transakcí.
 
+### 2026-10-04 – Obnova hesla přes e-mailový odkaz
+- Rozhodnutí: Přihlašovací stránka umožní vyžádat e-mail pro obnovu hesla; po události Supabase Auth `PASSWORD_RECOVERY` nabídne zadání a potvrzení nového hesla, které uloží přes `updateUser`.
+- Kontext: Uživatel požádal o možnost vytvořit nové heslo po otevření jednorázového odkazu zaslaného Supabase.
+- Důvod: Obnova používá ověřenou relaci vytvořenou jednorázovým odkazem a nepředává heslo serveru aplikace.
+
 ### 2026-10-04 – Výběr dne transakce v rámci zvoleného měsíce
 - Rozhodnutí: Formulář transakce vybírá pouze den; rok a měsíc se automaticky převezmou z právě vybraného měsíce rozpočtu. Nabídka dnů respektuje délku měsíce včetně přestupného roku.
 - Kontext: Uživatel požádal o zjednodušení zadávání data, protože měsíc a rok už určuje hlavní měsíční filtr.

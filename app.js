@@ -59,8 +59,8 @@ function normalizeInventoryItem(item, type = 'freezer') {
     name: String(source.name || 'Bez názvu').trim() || 'Bez názvu',
     quantity,
     unit,
-    addedAt: source.addedAt || source.added_at || source.date || source.createdAt || new Date().toISOString().slice(0, 10),
-    expiresAt: source.expiresAt || source.expires_at || source.expirationDate || '',
+    addedAt: source.addedAt || source.date || source.createdAt || new Date().toISOString().slice(0, 10),
+    expiresAt: source.expiresAt || source.expirationDate || '',
     category: source.category || '',
     notes: source.notes || '',
     type
@@ -186,7 +186,6 @@ purgePrototypeInventoryFixtures();
 
 const freezerItems = readInventoryList('food_planner_freezer_items', defaultFreezerItems, 'freezer');
 const stockItems = readInventoryList('food_planner_stock_items', defaultStockItems, 'stock');
-let inventoryReady = Promise.resolve();
 const budgetLogic = (typeof window !== 'undefined' && window.BudgetLogic) || (typeof require === 'function' ? require('./budget.js') : {});
 const budgetStorageKey = 'food_planner_budget_state_v1';
 
@@ -1340,6 +1339,37 @@ function renderFreezerList() {
         .join('')
     : '<li><div><strong>Žádné zbytky</strong><br /><small>V mrazáku zatím není nic uloženo.</small></div></li>';
 
+  if (typeof freezerListEl.querySelectorAll === 'function') {
+    freezerListEl.querySelectorAll('.inventory-qty-btn').forEach((button) => {
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const target = event.currentTarget || button;
+        const inventoryType = String(target.dataset.inventoryType || 'freezer');
+        const action = String(target.dataset.inventoryAction || '');
+        const itemId = String(target.dataset.itemId || '');
+        const sourceList = inventoryType === 'freezer' ? freezerItems : stockItems;
+        const item = findInventoryItemByReference(sourceList, itemId, target);
+
+        if (!item || !action || !inventoryType) {
+          return;
+        }
+
+        if (action === 'increment') {
+          const next = updateInventoryQuantity(sourceList, item.id, getInventoryStep(inventoryType, item.unit), inventoryType);
+          sourceList.splice(0, sourceList.length, ...next);
+          persistInventoryState();
+          return;
+        }
+
+        if (action === 'decrement') {
+          const next = updateInventoryQuantity(sourceList, item.id, -getInventoryStep(inventoryType, item.unit), inventoryType);
+          sourceList.splice(0, sourceList.length, ...next);
+          persistInventoryState();
+        }
+      });
+    });
+  }
+
   renderInventorySummary();
 }
 
@@ -1366,6 +1396,37 @@ function renderStockList() {
         )
         .join('')
     : '<li><div><strong>Žádné zásoby</strong><br /><small>Nemáte zatím žádné trvanlivé ingredience.</small></div></li>';
+
+  if (typeof stockListEl.querySelectorAll === 'function') {
+    stockListEl.querySelectorAll('.inventory-qty-btn').forEach((button) => {
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        const target = event.currentTarget || button;
+        const inventoryType = String(target.dataset.inventoryType || 'stock');
+        const action = String(target.dataset.inventoryAction || '');
+        const itemId = String(target.dataset.itemId || '');
+        const sourceList = inventoryType === 'freezer' ? freezerItems : stockItems;
+        const item = findInventoryItemByReference(sourceList, itemId, target);
+
+        if (!item || !action || !inventoryType) {
+          return;
+        }
+
+        if (action === 'increment') {
+          const next = updateInventoryQuantity(sourceList, item.id, getInventoryStep(inventoryType, item.unit), inventoryType);
+          sourceList.splice(0, sourceList.length, ...next);
+          persistInventoryState();
+          return;
+        }
+
+        if (action === 'decrement') {
+          const next = updateInventoryQuantity(sourceList, item.id, -getInventoryStep(inventoryType, item.unit), inventoryType);
+          sourceList.splice(0, sourceList.length, ...next);
+          persistInventoryState();
+        }
+      });
+    });
+  }
 
   renderInventorySummary();
 }
@@ -2122,26 +2183,8 @@ function closeFoodPickerModal() {
   foodPickerState.slotKey = null;
 }
 
-function getAppFromSearch(search = '') {
-  return new URLSearchParams(search).get('app') === 'budget' ? 'budget' : 'foodplanner';
-}
-
-function updateAppUrl(appName) {
-  if (typeof window === 'undefined' || !window.location || !window.history?.pushState) {
-    return;
-  }
-
-  const url = new URL(window.location.href);
-  url.searchParams.set('app', appName === 'budget' ? 'budget' : 'food');
-  window.history.pushState({}, '', url);
-}
-
-function setActiveApp(appName = 'foodplanner', updateUrl = true) {
+function setActiveApp(appName = 'foodplanner') {
   const nextApp = appName === 'budget' ? 'budget' : 'foodplanner';
-
-  if (updateUrl) {
-    updateAppUrl(nextApp);
-  }
 
   if (typeof document !== 'undefined' && document.body) {
     document.body.dataset.activeApp = nextApp;
@@ -2230,7 +2273,7 @@ function setActiveView(viewName) {
 }
 
 if (typeof document !== 'undefined' && document.body) {
-  setActiveApp(getAppFromSearch(window.location?.search || ''), false);
+  document.body.dataset.activeApp = 'foodplanner';
 }
 
 navButtons.forEach((button) => {
@@ -2250,12 +2293,6 @@ if (appToggleButton) {
   appToggleButton.addEventListener('click', () => {
     const activeApp = document.body.dataset.activeApp || 'foodplanner';
     setActiveApp(activeApp === 'budget' ? 'foodplanner' : 'budget');
-  });
-}
-
-if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
-  window.addEventListener('popstate', () => {
-    setActiveApp(getAppFromSearch(window.location?.search || ''), false);
   });
 }
 
@@ -2752,161 +2789,6 @@ function persistInventoryState() {
   renderStockList();
 }
 
-async function getInventoryAuthorizationHeaders() {
-  if (typeof window === 'undefined' || !window.foodPlannerSupabase) {
-    throw new Error('Nepodařilo se ověřit přihlášení k databázi.');
-  }
-
-  const { data: { session }, error } = await window.foodPlannerSupabase.auth.getSession();
-  if (error || !session?.access_token) {
-    throw new Error('Přihlášení vypršelo. Přihlaste se znovu.');
-  }
-
-  return { Authorization: `Bearer ${session.access_token}` };
-}
-
-async function inventoryApiRequest(path = '', options = {}) {
-  const headers = await getInventoryAuthorizationHeaders();
-  const hasBody = options.body !== undefined;
-  const response = await fetch(`/api/inventory${path}`, {
-    ...options,
-    headers: {
-      ...headers,
-      ...(hasBody ? { 'Content-Type': 'application/json' } : {})
-    },
-    ...(hasBody ? { body: JSON.stringify(options.body) } : {})
-  });
-  const payload = await response.json();
-
-  if (!response.ok) {
-    throw new Error(payload.message || 'Databázi se nepodařilo aktualizovat.');
-  }
-
-  return payload;
-}
-
-function toInventoryDatabasePayload(item, type) {
-  const normalized = normalizeInventoryItem(item, type);
-  if (type === 'freezer') {
-    return {
-      food_id: normalized.food_id,
-      name: normalized.name,
-      quantity: normalized.quantity,
-      unit: normalized.unit,
-      added_at: normalized.addedAt,
-      notes: normalized.notes || null
-    };
-  }
-
-  return {
-    name: normalized.name,
-    quantity: normalized.quantity,
-    unit: normalized.unit,
-    category: normalized.category || null,
-    expires_at: normalized.expiresAt || null,
-    notes: normalized.notes || null
-  };
-}
-
-async function loadInventoryFromDatabase() {
-  if (typeof window === 'undefined' || !window.foodPlannerAccessReady) {
-    return;
-  }
-
-  const cachedFreezer = [...freezerItems];
-  const cachedStock = [...stockItems];
-
-  try {
-    await window.foodPlannerAccessReady;
-    const payload = await inventoryApiRequest();
-    let freezerRows = Array.isArray(payload.freezer) ? payload.freezer : [];
-    let stockRows = Array.isArray(payload.stock) ? payload.stock : [];
-
-    if (!freezerRows.length && cachedFreezer.length) {
-      const migrated = await inventoryApiRequest('/freezer', {
-        method: 'POST',
-        body: cachedFreezer.map((item) => toInventoryDatabasePayload(item, 'freezer'))
-      });
-      freezerRows = migrated.items || [];
-    }
-
-    if (!stockRows.length && cachedStock.length) {
-      const migrated = await inventoryApiRequest('/stock', {
-        method: 'POST',
-        body: cachedStock.map((item) => toInventoryDatabasePayload(item, 'stock'))
-      });
-      stockRows = migrated.items || [];
-    }
-
-    freezerItems.splice(0, freezerItems.length, ...freezerRows.map((item) => normalizeInventoryItem(item, 'freezer')));
-    stockItems.splice(0, stockItems.length, ...stockRows.map((item) => normalizeInventoryItem(item, 'stock')));
-    persistInventoryState();
-  } catch (error) {
-    console.error('Nepodařilo se načíst inventář z databáze:', error);
-    renderFreezerList();
-    renderStockList();
-  }
-}
-
-async function insertInventoryItem(type, item) {
-  await inventoryReady;
-  const result = await inventoryApiRequest(`/${type}`, {
-    method: 'POST',
-    body: toInventoryDatabasePayload(item, type)
-  });
-  const savedItem = result.items?.[0];
-  if (!savedItem) {
-    throw new Error('Databáze nevrátila uloženou položku.');
-  }
-  return normalizeInventoryItem(savedItem, type);
-}
-
-function reportInventoryError(error) {
-  console.error('Nepodařilo se uložit změnu inventáře:', error);
-  if (typeof window !== 'undefined' && typeof window.alert === 'function') {
-    window.alert(`Změnu se nepodařilo uložit do databáze. ${error.message || ''}`);
-  }
-}
-
-async function changeInventoryQuantityInDatabase(sourceList, item, delta, inventoryType) {
-  await inventoryReady;
-  const nextItems = updateInventoryQuantity(sourceList, item.id, delta, inventoryType);
-  const updatedItem = nextItems.find((listItem) => String(listItem.id) === String(item.id));
-
-  try {
-    let savedItem = null;
-    if (updatedItem) {
-      const result = await inventoryApiRequest(`/${inventoryType}/${encodeURIComponent(item.id)}`, {
-        method: 'PATCH',
-        body: { quantity: updatedItem.quantity }
-      });
-      savedItem = normalizeInventoryItem(result.item, inventoryType);
-    } else {
-      await inventoryApiRequest(`/${inventoryType}/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
-    }
-
-    const nextList = updatedItem
-      ? nextItems.map((listItem) => String(listItem.id) === String(item.id) ? savedItem : listItem)
-      : nextItems;
-    sourceList.splice(0, sourceList.length, ...nextList);
-    persistInventoryState();
-  } catch (error) {
-    reportInventoryError(error);
-  }
-}
-
-async function deleteInventoryItemFromDatabase(sourceList, item, inventoryType) {
-  await inventoryReady;
-  try {
-    await inventoryApiRequest(`/${inventoryType}/${encodeURIComponent(item.id)}`, { method: 'DELETE' });
-    const nextItems = sourceList.filter((listItem) => String(listItem.id) !== String(item.id));
-    sourceList.splice(0, sourceList.length, ...nextItems);
-    persistInventoryState();
-  } catch (error) {
-    reportInventoryError(error);
-  }
-}
-
 function populateInventoryFoodSelects() {
   const freezerFoodSelect = freezerForm && typeof freezerForm.querySelector === 'function'
     ? freezerForm.querySelector('[name="freezerFoodId"]')
@@ -2924,7 +2806,7 @@ function populateInventoryFoodSelects() {
 }
 
 if (freezerForm && typeof freezerForm.addEventListener === 'function') {
-  freezerForm.addEventListener('submit', async (event) => {
+  freezerForm.addEventListener('submit', (event) => {
     event.preventDefault();
 
     const nameInput = freezerForm.querySelector('[name="freezerName"]');
@@ -2940,22 +2822,20 @@ if (freezerForm && typeof freezerForm.addEventListener === 'function') {
       return;
     }
 
-    try {
-      const savedItem = await insertInventoryItem('freezer', {
-        name: resolvedName,
-        food_id: selectedFoodId,
-        quantity,
-        unit,
-        type: 'freezer',
-        addedAt: new Date().toISOString().slice(0, 10)
-      });
-      freezerItems.push(savedItem);
-      persistInventoryState();
-      freezerForm.reset();
-      renderFreezerFoodSelection();
-    } catch (error) {
-      reportInventoryError(error);
-    }
+    const nextItems = addInventoryItem(freezerItems, {
+      name: resolvedName,
+      food_id: selectedFoodId,
+      quantity,
+      unit,
+      type: 'freezer',
+      addedAt: new Date().toISOString().slice(0, 10)
+    });
+
+    freezerItems.length = 0;
+    freezerItems.push(...nextItems);
+    persistInventoryState();
+    freezerForm.reset();
+    renderFreezerFoodSelection();
   });
 }
 
@@ -2975,7 +2855,7 @@ if (stockForm && typeof stockForm.addEventListener === 'function') {
   stockUnitInput?.addEventListener('change', updateStockQuantityStep);
   updateStockQuantityStep();
 
-  stockForm.addEventListener('submit', async (event) => {
+  stockForm.addEventListener('submit', (event) => {
     event.preventDefault();
 
     const nameInput = stockForm.querySelector('[name="stockName"]');
@@ -2989,22 +2869,20 @@ if (stockForm && typeof stockForm.addEventListener === 'function') {
       return;
     }
 
-    try {
-      const savedItem = await insertInventoryItem('stock', {
-        name,
-        quantity,
-        unit,
-        expiresAt,
-        category,
-        type: 'stock'
-      });
-      stockItems.push(savedItem);
-      persistInventoryState();
-      stockForm.reset();
-      updateStockQuantityStep();
-    } catch (error) {
-      reportInventoryError(error);
-    }
+    const nextItems = addInventoryItem(stockItems, {
+      name,
+      quantity,
+      unit,
+      expiresAt,
+      category,
+      type: 'stock'
+    });
+
+    stockItems.length = 0;
+    stockItems.push(...nextItems);
+    persistInventoryState();
+    stockForm.reset();
+    updateStockQuantityStep();
   });
 }
 
@@ -3083,10 +2961,6 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
       return;
     }
 
-    if (inventoryType !== 'freezer' && inventoryType !== 'stock') {
-      return;
-    }
-
     const sourceList = inventoryType === 'freezer' ? freezerItems : stockItems;
     const item = findInventoryItemByReference(sourceList, itemId, button);
 
@@ -3095,27 +2969,35 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
     }
 
     if (action === 'increment') {
-      void changeInventoryQuantityInDatabase(sourceList, item, getInventoryStep(inventoryType, item.unit), inventoryType);
+      const next = updateInventoryQuantity(sourceList, item.id, getInventoryStep(inventoryType, item.unit), inventoryType);
+      sourceList.splice(0, sourceList.length, ...next);
+      persistInventoryState();
       return;
     }
 
     if (action === 'decrement') {
-      void changeInventoryQuantityInDatabase(sourceList, item, -getInventoryStep(inventoryType, item.unit), inventoryType);
+      const next = updateInventoryQuantity(sourceList, item.id, -getInventoryStep(inventoryType, item.unit), inventoryType);
+      sourceList.splice(0, sourceList.length, ...next);
+      persistInventoryState();
       return;
     }
 
     if (action === 'delete') {
-      void deleteInventoryItemFromDatabase(sourceList, item, inventoryType);
+      const index = sourceList.findIndex((stockItem) => String(stockItem.id) === String(item.id));
+      if (index >= 0) {
+        sourceList.splice(index, 1);
+        persistInventoryState();
+      }
     }
   });
 }
 
-inventoryReady = loadInventoryFromDatabase();
 renderFreezerList();
 renderStockList();
 renderBudgetView();
 populateInventoryFoodSelects();
 renderWeekHeader();
+setActiveView('overview');
 loadSupercategoryOptions();
 loadFoodCatalog();
 loadSavedWeeklyPlans();
@@ -3142,7 +3024,6 @@ if (typeof module !== 'undefined' && module.exports) {
     getInventoryStep,
     getInventorySummary,
     buildFoodSubmissionPayload,
-    getAppFromSearch,
     weekPlanData
   };
 }

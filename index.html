@@ -464,7 +464,6 @@
             detectSessionInUrl: true
           }
         });
-        window.foodPlannerSupabase = supabase;
 
         const { data: { session } } = await supabase.auth.getSession();
 
@@ -485,7 +484,7 @@
         }
       }
 
-      window.foodPlannerAccessReady = ensureAccess();
+      ensureAccess();
     </script>
     <script src="budget.js"></script>
     <script src="app.js"></script>
