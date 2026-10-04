@@ -193,6 +193,11 @@ Tento soubor je hlavním zdrojem pravdy o projektu. Všechny důležité rozhodn
 - Kontext: Uživatel upřesnil pořadí a sousedství jednotlivých grafů a upozornění na přehledu.
 - Důvod: Dvojice souvisejících grafů je vedle sebe, zatímco průběh a upozornění tvoří druhou srovnatelnou řadu.
 
+### 2026-10-04 – Mobilní pořadí rychlého zadání transakce
+- Rozhodnutí: Na telefonu se formulář pro přidání transakce zobrazuje před obsahem Přehledu i Transakcí; jednotlivé transakční řádky skládají popis, částku a akce bez úzkých textových sloupců.
+- Kontext: Uživatel požádal o upřednostnění přidání transakce a o čitelnější seznam na telefonu, přičemž sekce Budgety má zůstat beze změny.
+- Důvod: Mobilní tok dává nejčastější akci na začátek a umožňuje přečíst informace o transakci v dostupné šířce displeje.
+
 ## 3. Záznam změn
 - Všechny navržené úpravy se zapisují sem, a to i v případě, že jsou pouze v prototypové fázi.
 - Poté, co je rozhodnutí přijato, je považováno za platné pro další vývoj.

@@ -977,6 +977,13 @@ button {
 }
 
 @media (max-width: 620px) {
+  .main-grid.budget-active .budget-layout[data-budget-view="budget-overview"] > #budgetSidePanel,
+  .main-grid.budget-active .budget-layout[data-budget-view="budget-transactions"] > #budgetSidePanel {
+    order: -1;
+  }
+}
+
+@media (max-width: 620px) {
   .content {
     padding: 18px;
   }
@@ -1517,5 +1524,26 @@ button {
   .budget-toolbar label select {
     width: 100%;
     min-width: 0;
+  }
+}
+
+@media (max-width: 620px) {
+  .list .budget-transaction-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .list .budget-transaction-row > .budget-list-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .list .budget-transaction-row > .budget-list-actions > span,
+  .list .budget-transaction-row > .budget-list-actions button {
+    white-space: nowrap;
   }
 }
