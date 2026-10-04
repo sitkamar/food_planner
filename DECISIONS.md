@@ -106,6 +106,11 @@ Tento soubor je hlavním zdrojem pravdy o projektu. Všechny důležité rozhodn
 - Kontext: Uživatel plánuje následující týdenní jídla předem a po pátku považuje plán aktuálního týdne za hotový.
 - Důvod: Týdenní rozsahy a jejich nadpisy zůstávají v kalendářním rytmu pondělí až neděle; mění se pouze výběr prvního týdne plánovacího okna.
 
+### 2026-10-04 – Jídelní lístek při výběru jídla do plánu
+- Rozhodnutí: Výběrové okno pro týdenní plán nabídne vedle seznamu také jídelní lístek se stránkami podle nadkategorií, kategoriemi jako nadpisy a podkategorií v závorce u jídla.
+- Kontext: Uživatel požádal o stejné restaurační zobrazení při výběru jídla do týdenního plánu jako v katalogu.
+- Důvod: Jednotné zobrazení usnadní výběr z většího katalogu, zatímco současné filtry a ukládání jídla do slotu zůstávají zachované.
+
 ### 2026-09-29 – Rozšíření o samostatný modul měsíčního rozpočtu
 - Rozhodnutí: Aplikace bude rozšířena o samostatnou sekci Rozpočet, která pracuje s měsíčním plánem, kategoriemi příjmů a výdajů a transakcemi a je plně oddělena od stávající části Food Planner.
 - Kontext: Klient požadoval funkci pro měsíční plán rozpočtu, evidenci výdajů a upozornění na překročení rozpočtu. Rozpočet má fungovat jako samostatná část aplikace, aby se data jídelního plánu a rozpočtu neovlivňovala.
@@ -130,6 +135,21 @@ Tento soubor je hlavním zdrojem pravdy o projektu. Všechny důležité rozhodn
 - Rozhodnutí: Limity kategorií a částky transakcí lze zadávat po jednotlivých korunách.
 - Kontext: Dosavadní formuláře vyžadovaly násobky sta korun, což nestačilo pro přesný domácí rozpočet.
 - Důvod: Krok číselných polí odpovídá požadované přesnosti a částky se nadále zobrazují v celých korunách.
+
+### 2026-10-04 – Oprava změny množství v zásobách a mrazáku
+- Rozhodnutí: Tlačítka v zásobách mění množství o 0,1 kg a tlačítka v mrazáku o jednu porci; položky se vyhledávají podle textového ID bez převodu na číslo.
+- Kontext: Textová ID položek inventáře se při číselném porovnání neshodovala, a tlačítka proto množství neměnila.
+- Důvod: Ukládání i zobrazení změny musí fungovat pro všechny typy ID používané položkami inventáře.
+
+### 2026-10-04 – Jednotky pro zásoby
+- Rozhodnutí: Zásoby používají pouze jednotky `kg` a `balení`; změna množství je 0,1 kg nebo jedno celé balení podle zvolené jednotky.
+- Kontext: Uživatel požádal o oddělené sledování ingrediencí podle kilogramů a počtu balení a o výběr jednotky ze seznamu.
+- Důvod: Pevná nabídka jednotek předchází nejednotným zápisům a umožňuje správný krok tlačítek.
+
+### 2026-10-04 – Odstranění vyčerpané položky zásob
+- Rozhodnutí: Při odečtení posledního množství se položka odstraní z uloženého seznamu i zobrazení.
+- Kontext: Uživatel upozornil, že záznam s nulovým množstvím nemá zůstávat v inventáři.
+- Důvod: Seznam zásob má zobrazovat pouze dostupné množství.
 
 ## 3. Záznam změn
 - Všechny navržené úpravy se zapisují sem, a to i v případě, že jsou pouze v prototypové fázi.

@@ -46,6 +46,9 @@ function normalizeInventoryItem(item, type = 'freezer') {
   const quantityValue = Number(source.quantity ?? source.qty ?? 0);
   const normalizedQuantity = Number.isFinite(quantityValue) ? Math.max(0, quantityValue) : 0;
   const fallbackUnit = type === 'stock' ? 'kg' : 'porce';
+  const sourceUnit = String(source.unit || source.qtyUnit || fallbackUnit).trim();
+  const unit = type === 'stock' ? (sourceUnit === 'balení' ? 'balení' : 'kg') : sourceUnit || fallbackUnit;
+  const quantity = type === 'stock' && unit === 'balení' ? Math.round(normalizedQuantity) : normalizedQuantity;
 
   const foodIdValue = Number(source.food_id ?? source.foodId ?? 0);
   const shouldKeepFoodLink = type === 'freezer';
@@ -54,8 +57,8 @@ function normalizeInventoryItem(item, type = 'freezer') {
     id: source.id ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     food_id: shouldKeepFoodLink && Number.isFinite(foodIdValue) && foodIdValue > 0 ? foodIdValue : null,
     name: String(source.name || 'Bez názvu').trim() || 'Bez názvu',
-    quantity: normalizedQuantity,
-    unit: String(source.unit || source.qtyUnit || fallbackUnit).trim() || fallbackUnit,
+    quantity,
+    unit,
     addedAt: source.addedAt || source.date || source.createdAt || new Date().toISOString().slice(0, 10),
     expiresAt: source.expiresAt || source.expirationDate || '',
     category: source.category || '',
@@ -120,23 +123,25 @@ function addInventoryItem(list, item) {
   return nextList;
 }
 
-function getInventoryStep(inventoryType = 'freezer') {
-  return inventoryType === 'stock' ? 0.1 : 1;
+function getInventoryStep(inventoryType = 'freezer', unit = 'kg') {
+  return inventoryType === 'stock' && unit !== 'balení' ? 0.1 : 1;
 }
 
 function updateInventoryQuantity(list, itemId, delta, inventoryType = 'freezer') {
   const numericDelta = Number(delta || 0);
-  const step = getInventoryStep(inventoryType);
-  const safeDelta = Number.isFinite(numericDelta) && Math.abs(numericDelta) > 0 ? numericDelta : step;
 
-  return (Array.isArray(list) ? list : []).map((item) => {
-    if (Number(item.id) !== Number(itemId)) {
-      return item;
+  return (Array.isArray(list) ? list : []).flatMap((item) => {
+    if (String(item.id) !== String(itemId)) {
+      return [item];
     }
 
+    const step = getInventoryStep(inventoryType, item.unit);
+    const safeDelta = Number.isFinite(numericDelta) && Math.abs(numericDelta) > 0 ? numericDelta : step;
     const baseQuantity = Number(item.quantity ?? 0);
     const nextQuantity = Math.max(0, baseQuantity + safeDelta);
-    return { ...item, quantity: Number.isFinite(nextQuantity) ? Number(nextQuantity.toFixed(1)) : 0 };
+    const precision = inventoryType === 'stock' && item.unit === 'balení' ? 0 : 1;
+    const updatedQuantity = Number.isFinite(nextQuantity) ? Number(nextQuantity.toFixed(precision)) : 0;
+    return updatedQuantity > 0 ? [{ ...item, quantity: updatedQuantity }] : [];
   });
 }
 
@@ -818,6 +823,10 @@ const foodPickerCategory = document.getElementById('foodPickerCategory');
 const foodPickerSubcategory = document.getElementById('foodPickerSubcategory');
 const foodPickerSearch = document.getElementById('foodPickerSearch');
 const foodPickerList = document.getElementById('foodPickerList');
+const foodPickerMenuPages = document.getElementById('foodPickerMenuPages');
+const foodPickerMenuPage = document.getElementById('foodPickerMenuPage');
+const foodPickerListMode = document.getElementById('foodPickerListMode');
+const foodPickerMenuMode = document.getElementById('foodPickerMenuMode');
 const foodPickerTitle = document.getElementById('foodPickerTitle');
 const clearFoodSelectionBtn = document.getElementById('clearFoodSelectionBtn');
 
@@ -825,6 +834,9 @@ const foodPickerState = {
   weekStart: null,
   slotKey: null
 };
+
+let foodPickerMode = 'list';
+let activeFoodPickerMenuPage = '';
 
 const budgetMonthPicker = document.getElementById('budgetMonthPicker');
 const budgetSummaryCards = document.getElementById('budgetSummaryCards');
@@ -1328,14 +1340,14 @@ function renderFreezerList() {
         }
 
         if (action === 'increment') {
-          const next = updateInventoryQuantity(sourceList, item.id, getInventoryStep(inventoryType), inventoryType);
+          const next = updateInventoryQuantity(sourceList, item.id, getInventoryStep(inventoryType, item.unit), inventoryType);
           sourceList.splice(0, sourceList.length, ...next);
           persistInventoryState();
           return;
         }
 
         if (action === 'decrement') {
-          const next = updateInventoryQuantity(sourceList, item.id, -getInventoryStep(inventoryType), inventoryType);
+          const next = updateInventoryQuantity(sourceList, item.id, -getInventoryStep(inventoryType, item.unit), inventoryType);
           sourceList.splice(0, sourceList.length, ...next);
           persistInventoryState();
         }
@@ -1386,14 +1398,14 @@ function renderStockList() {
         }
 
         if (action === 'increment') {
-          const next = updateInventoryQuantity(sourceList, item.id, getInventoryStep(inventoryType), inventoryType);
+          const next = updateInventoryQuantity(sourceList, item.id, getInventoryStep(inventoryType, item.unit), inventoryType);
           sourceList.splice(0, sourceList.length, ...next);
           persistInventoryState();
           return;
         }
 
         if (action === 'decrement') {
-          const next = updateInventoryQuantity(sourceList, item.id, -getInventoryStep(inventoryType), inventoryType);
+          const next = updateInventoryQuantity(sourceList, item.id, -getInventoryStep(inventoryType, item.unit), inventoryType);
           sourceList.splice(0, sourceList.length, ...next);
           persistInventoryState();
         }
@@ -1863,6 +1875,81 @@ function getFoodPickerOptions(slotKey, selectedValues = {}) {
   return resolveFoodPickerFilterState(targetFoods, selectedValues);
 }
 
+function renderFoodPickerResults(foods, selectedValue) {
+  const showMenu = foodPickerMode === 'menu';
+  foodPickerList.classList.toggle('hidden', showMenu);
+  foodPickerMenuPages.classList.toggle('hidden', !showMenu);
+  foodPickerMenuPage.classList.toggle('hidden', !showMenu);
+  foodPickerListMode.classList.toggle('active', !showMenu);
+  foodPickerListMode.setAttribute('aria-pressed', String(!showMenu));
+  foodPickerMenuMode.classList.toggle('active', showMenu);
+  foodPickerMenuMode.setAttribute('aria-pressed', String(showMenu));
+
+  if (!foods.length) {
+    foodPickerList.innerHTML = '<div class="selected-food-summary"><strong>Žádná jídla</strong><small>Pro aktuální filtr neexistuje žádná varianta.</small></div>';
+    foodPickerMenuPages.innerHTML = '';
+    foodPickerMenuPage.innerHTML = '<p class="food-menu-empty">Pro aktuální filtr neexistují žádná jídla.</p>';
+    return;
+  }
+
+  foodPickerList.innerHTML = foods
+    .map((food) => {
+      const foodName = escapeFoodOption(food.name || 'Bez názvu');
+      const isSelected = selectedValue && selectedValue === food.name;
+      return `
+        <button class="food-picker-item" type="button" data-food-name="${foodName}" data-food-id="${escapeFoodOption(food.id ?? '')}">
+          <div>
+            <strong>${foodName}</strong>
+            <small>${escapeFoodOption(getFoodMeta(food).label)}</small>
+          </div>
+          ${isSelected ? '<span class="ghost-btn">Vybráno</span>' : ''}
+        </button>
+      `;
+    })
+    .join('');
+
+  const pageNames = [...new Set(foods.map((food) => food.supercategory || 'Bez nadkategorie'))]
+    .sort((first, second) => first.localeCompare(second, 'cs'));
+  if (!pageNames.includes(activeFoodPickerMenuPage)) {
+    activeFoodPickerMenuPage = pageNames[0];
+  }
+
+  foodPickerMenuPages.innerHTML = pageNames.map((pageName) => `
+    <button class="food-menu-tab${pageName === activeFoodPickerMenuPage ? ' active' : ''}" type="button" role="tab" aria-selected="${pageName === activeFoodPickerMenuPage}" data-food-picker-page="${escapeFoodOption(pageName)}">${escapeFoodOption(pageName)}</button>
+  `).join('');
+
+  const pageFoods = foods.filter((food) => (food.supercategory || 'Bez nadkategorie') === activeFoodPickerMenuPage);
+  const categoryGroups = new Map();
+  pageFoods.forEach((food) => {
+    const category = food.category || 'Bez kategorie';
+    if (!categoryGroups.has(category)) {
+      categoryGroups.set(category, []);
+    }
+    categoryGroups.get(category).push(food);
+  });
+
+  foodPickerMenuPage.innerHTML = `
+    <header class="food-menu-heading">
+      <p class="eyebrow">Jídelní lístek</p>
+      <h3>${escapeFoodOption(activeFoodPickerMenuPage)}</h3>
+    </header>
+    ${[...categoryGroups.keys()].sort((first, second) => first.localeCompare(second, 'cs')).map((category) => `
+      <section class="food-menu-category">
+        <h4>${escapeFoodOption(category)}</h4>
+        <ul class="food-menu-dishes">
+          ${categoryGroups.get(category).map((food) => `
+            <li>
+              <span class="food-menu-dish-name">${escapeFoodOption(food.name || 'Bez názvu')}</span>
+              ${food.subcategory ? `<span class="food-menu-dish-subcategory">(${escapeFoodOption(food.subcategory)})</span>` : ''}
+              <button class="secondary" type="button" data-food-name="${escapeFoodOption(food.name || '')}" data-food-id="${escapeFoodOption(food.id ?? '')}" aria-label="Vybrat ${escapeFoodOption(food.name || 'jídlo')}">${selectedValue === food.name ? 'Vybráno' : 'Vybrat'}</button>
+            </li>
+          `).join('')}
+        </ul>
+      </section>
+    `).join('')}
+  `;
+}
+
 function renderFoodPickerModal() {
   if (!foodPickerModal || !foodPickerSupercategory || !foodPickerCategory || !foodPickerSubcategory || !foodPickerList) {
     return;
@@ -1918,27 +2005,7 @@ function renderFoodPickerModal() {
     query: foodPickerSearch?.value || ''
   });
 
-  if (!filteredFoods.length) {
-    foodPickerList.innerHTML = '<div class="selected-food-summary"><strong>Žádná jídla</strong><small>Pro aktuální filtr neexistuje žádná vhodná varianta.</small></div>';
-    return;
-  }
-
-  foodPickerList.innerHTML = filteredFoods
-    .map((food) => {
-      const foodMeta = getFoodMeta(food);
-      const isSelected = selectedValue && selectedValue === food.name;
-
-      return `
-        <button class="food-picker-item" type="button" data-food-name="${food.name}" data-food-id="${food.id ?? ''}">
-          <div>
-            <strong>${food.name}</strong>
-            <small>${foodMeta.label}</small>
-          </div>
-          ${isSelected ? '<span class="ghost-btn">Vybráno</span>' : ''}
-        </button>
-      `;
-    })
-    .join('');
+  renderFoodPickerResults(filteredFoods, selectedValue);
 }
 
 function openFoodPickerModal(weekStart, slotKey) {
@@ -2411,6 +2478,20 @@ if (foodPickerModal) {
       return;
     }
 
+    const modeButton = event.target.closest('[data-food-picker-mode]');
+    if (modeButton) {
+      foodPickerMode = modeButton.dataset.foodPickerMode === 'menu' ? 'menu' : 'list';
+      renderFoodPickerModal();
+      return;
+    }
+
+    const pageButton = event.target.closest('[data-food-picker-page]');
+    if (pageButton) {
+      activeFoodPickerMenuPage = pageButton.dataset.foodPickerPage;
+      renderFoodPickerModal();
+      return;
+    }
+
     const selectedFoodButton = event.target.closest('[data-food-name]');
     if (!selectedFoodButton) {
       return;
@@ -2510,6 +2591,21 @@ if (freezerForm && typeof freezerForm.addEventListener === 'function') {
 }
 
 if (stockForm && typeof stockForm.addEventListener === 'function') {
+  const stockQuantityInput = typeof stockForm.querySelector === 'function'
+    ? stockForm.querySelector('[name="stockQuantity"]')
+    : null;
+  const stockUnitInput = typeof stockForm.querySelector === 'function'
+    ? stockForm.querySelector('[name="stockUnit"]')
+    : null;
+  const updateStockQuantityStep = () => {
+    if (stockQuantityInput && stockUnitInput) {
+      stockQuantityInput.step = stockUnitInput.value === 'balení' ? '1' : '0.1';
+    }
+  };
+
+  stockUnitInput?.addEventListener('change', updateStockQuantityStep);
+  updateStockQuantityStep();
+
   stockForm.addEventListener('submit', (event) => {
     event.preventDefault();
 
@@ -2537,6 +2633,7 @@ if (stockForm && typeof stockForm.addEventListener === 'function') {
     stockItems.push(...nextItems);
     persistInventoryState();
     stockForm.reset();
+    updateStockQuantityStep();
   });
 }
 
@@ -2623,14 +2720,14 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
     }
 
     if (action === 'increment') {
-      const next = updateInventoryQuantity(sourceList, item.id, getInventoryStep(inventoryType), inventoryType);
+      const next = updateInventoryQuantity(sourceList, item.id, getInventoryStep(inventoryType, item.unit), inventoryType);
       sourceList.splice(0, sourceList.length, ...next);
       persistInventoryState();
       return;
     }
 
     if (action === 'decrement') {
-      const next = updateInventoryQuantity(sourceList, item.id, -getInventoryStep(inventoryType), inventoryType);
+      const next = updateInventoryQuantity(sourceList, item.id, -getInventoryStep(inventoryType, item.unit), inventoryType);
       sourceList.splice(0, sourceList.length, ...next);
       persistInventoryState();
       return;

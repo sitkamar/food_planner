@@ -597,6 +597,30 @@ button {
   padding-right: 4px;
 }
 
+.food-picker-view-switch {
+  align-self: flex-start;
+}
+
+.food-picker-menu-page {
+  width: 100%;
+  min-height: 220px;
+  max-height: 52vh;
+  overflow-y: auto;
+  padding-top: 16px;
+}
+
+.food-picker-menu-page .food-menu-heading {
+  margin-bottom: 12px;
+}
+
+.food-picker-menu-page .food-menu-category {
+  margin-top: 14px;
+}
+
+.food-picker-menu-page .food-menu-dishes li {
+  grid-template-columns: minmax(0, 1fr) auto auto;
+}
+
 .food-picker-item {
   display: flex;
   align-items: center;
@@ -894,6 +918,10 @@ button {
 }
 
 @media (max-width: 980px) {
+  .modal-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .app-shell {
     flex-direction: column;
   }

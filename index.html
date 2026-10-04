@@ -167,7 +167,10 @@
                   </label>
                   <label>
                     <span>Jednotka</span>
-                    <input name="stockUnit" type="text" value="kg" placeholder="kg" />
+                    <select name="stockUnit">
+                      <option value="kg">kg</option>
+                      <option value="balení">balení</option>
+                    </select>
                   </label>
                 </div>
                 <div class="inline-fields">
@@ -384,6 +387,12 @@
           </label>
         </div>
 
+        <div class="food-picker-view-switch catalog-view-switch" role="group" aria-label="Zobrazení jídel">
+          <button id="foodPickerListMode" class="catalog-view-button active" type="button" data-food-picker-mode="list" aria-pressed="true">Seznam</button>
+          <button id="foodPickerMenuMode" class="catalog-view-button" type="button" data-food-picker-mode="menu" aria-pressed="false">Jídelní lístek</button>
+        </div>
+        <nav id="foodPickerMenuPages" class="food-menu-pages hidden" role="tablist" aria-label="Nadkategorie jídel"></nav>
+        <div id="foodPickerMenuPage" class="food-menu-page food-picker-menu-page hidden" role="tabpanel" aria-live="polite"></div>
         <div id="foodPickerList" class="food-picker-list" aria-live="polite"></div>
 
         <div class="modal-actions">

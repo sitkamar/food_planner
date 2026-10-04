@@ -408,8 +408,67 @@ test('po posunu do jiného týdne se načtou uložená jídla pro daný týden',
 });
 
 test('zásoby mění množství o 0,1 kg a mrazák o celé porce', () => {
-  assert.equal(getInventoryStep('stock'), 0.1);
+  assert.equal(getInventoryStep('stock', 'kg'), 0.1);
+  assert.equal(getInventoryStep('stock', 'balení'), 1);
   assert.equal(getInventoryStep('freezer'), 1);
+});
+
+test('zásoby omezují jednotky na kg a balení a balení mění po celých kusech', () => {
+  const packages = addInventoryItem([], {
+    name: 'Rýže',
+    quantity: 2,
+    unit: 'balení',
+    type: 'stock'
+  });
+  const updatedPackages = updateInventoryQuantity(
+    packages,
+    packages[0].id,
+    getInventoryStep('stock', packages[0].unit),
+    'stock'
+  );
+  const unsupportedUnit = addInventoryItem([], {
+    name: 'Mléko',
+    quantity: 1,
+    unit: 'litr',
+    type: 'stock'
+  });
+
+  assert.equal(updatedPackages[0].quantity, 3);
+  assert.equal(packages[0].unit, 'balení');
+  assert.equal(unsupportedUnit[0].unit, 'kg');
+});
+
+test('odečtením posledního množství se položka odstraní', () => {
+  const lastTenthOfKilogram = updateInventoryQuantity(
+    [{ id: 'stock-1', name: 'Mouka', quantity: 0.1, unit: 'kg' }],
+    'stock-1',
+    -getInventoryStep('stock', 'kg'),
+    'stock'
+  );
+  const lastPackage = updateInventoryQuantity(
+    [{ id: 'stock-2', name: 'Rýže', quantity: 1, unit: 'balení' }],
+    'stock-2',
+    -getInventoryStep('stock', 'balení'),
+    'stock'
+  );
+
+  assert.deepEqual(lastTenthOfKilogram, []);
+  assert.deepEqual(lastPackage, []);
+});
+
+test('úprava množství funguje i pro textová ID položek inventáře', () => {
+  const stock = [{ id: 'stock-uuid', name: 'Mleté maso', quantity: 1, unit: 'kg' }];
+  const freezer = [{ id: 'freezer-uuid', name: 'Lasagne', quantity: 2, unit: 'porce' }];
+
+  const updatedStock = updateInventoryQuantity(stock, 'stock-uuid', getInventoryStep('stock'), 'stock');
+  const updatedFreezer = updateInventoryQuantity(freezer, 'freezer-uuid', getInventoryStep('freezer'), 'freezer');
+  const reducedStock = updateInventoryQuantity(updatedStock, 'stock-uuid', -getInventoryStep('stock'), 'stock');
+  const reducedFreezer = updateInventoryQuantity(updatedFreezer, 'freezer-uuid', -getInventoryStep('freezer'), 'freezer');
+
+  assert.equal(updatedStock[0].quantity, 1.1);
+  assert.equal(updatedFreezer[0].quantity, 3);
+  assert.equal(reducedStock[0].quantity, 1);
+  assert.equal(reducedFreezer[0].quantity, 2);
 });
 
 test('přidání a úprava množství v mrazáku a zásobách se počítá správně', () => {
