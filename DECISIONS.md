@@ -151,6 +151,36 @@ Tento soubor je hlavním zdrojem pravdy o projektu. Všechny důležité rozhodn
 - Kontext: Uživatel upozornil, že záznam s nulovým množstvím nemá zůstávat v inventáři.
 - Důvod: Seznam zásob má zobrazovat pouze dostupné množství.
 
+### 2026-10-04 – Aktuální měsíc v přehledu rozpočtu
+- Rozhodnutí: Po obnovení stránky se rozpočet otevře na aktuálním měsíci. Tlačítko „Aktuální“ vrátí měsíční filtr k dnešnímu měsíci a týdenní ovládání se v modulu rozpočtu nezobrazuje.
+- Kontext: Uživatel požádal o odstranění ovládání určeného pro plánování týdnů z rozpočtu a o rychlý návrat z historického měsíce.
+- Důvod: Aktuální měsíc je výchozím a nejčastějším pohledem; zachování týdenního ovládání pouze ve Food Planneru předchází záměně mezi moduly.
+
+### 2026-10-04 – Rozdělení Budget Planneru na tři sekce
+- Rozhodnutí: Budget Planner má samostatné pohledy Přehled, Transakce a Budgety. Přehled kombinuje souhrnné hodnoty, čerpání, upozornění a trend s rychlým formulářem transakce. Transakce nabízí měsíční seznam, hledání, filtry a úpravu i mazání. Budgety spravují kategorie a jejich měsíční limity.
+- Kontext: Uživatel požádal o rozdělení rozpočtové části do tří sekcí v levé navigaci a popsal jejich hlavní úlohy.
+- Důvod: Oddělení každodenního přehledu, evidence jednotlivých transakcí a správy rozpočtových kategorií zjednodušuje orientaci a ponechává stávající model globálních kategorií s měsíčním filtrem transakcí.
+
+### 2026-10-04 – Výběr dne transakce v rámci zvoleného měsíce
+- Rozhodnutí: Formulář transakce vybírá pouze den; rok a měsíc se automaticky převezmou z právě vybraného měsíce rozpočtu. Nabídka dnů respektuje délku měsíce včetně přestupného roku.
+- Kontext: Uživatel požádal o zjednodušení zadávání data, protože měsíc a rok už určuje hlavní měsíční filtr.
+- Důvod: Jediné měsíční nastavení zamezuje rozporu mezi filtrem a datem transakce a omezení počtu dnů brání neplatným datům.
+
+### 2026-10-04 – Kumulovaný trend a rozdělení výdajů v grafu
+- Rozhodnutí: Přehled rozpočtu zobrazuje line chart kumulovaného finančního stavu od počáteční nuly před prvním měsícem s transakcemi; každý měsíční bod už zahrnuje bilanci daného měsíce. Vedle něj je pie chart skutečných výdajů podle kategorií ve vybraném měsíci.
+- Kontext: Uživatel požádal o nahrazení dosavadního vývoje mezi měsíci spojnicovým grafem a doplnění koláčového grafu čerpání kategorií.
+- Důvod: Kumulovaný součet měsíčních příjmů a výdajů ukazuje směr celkového vývoje včetně aktuální bilance prvního měsíce; koláčové rozdělení zpřehledňuje podíl jednotlivých kategorií na výdajích vybraného měsíce.
+
+### 2026-10-04 – Zachování přehledu čerpání budgetů
+- Rozhodnutí: Pie chart rozdělení výdajů doplňuje samostatný pruhový přehled skutečného čerpání každého výdajového budgetu vůči jeho limitu.
+- Kontext: Uživatel upřesnil, že vedle nového pie chartu chce zachovat i původní srovnání využití budgetů podle kategorií.
+- Důvod: Koláčový graf porovnává podíly na celkových výdajích, zatímco pruhy ukazují plnění limitu jednotlivých kategorií; oba pohledy odpovídají rozdílným otázkám.
+
+### 2026-10-04 – Dvouřadé rozložení grafů přehledu
+- Rozhodnutí: Přehled zobrazuje využití budgetů vlevo a pie chart vpravo v horní řadě; ve spodní řadě je vlevo kumulovaný vývoj a vpravo upozornění.
+- Kontext: Uživatel upřesnil pořadí a sousedství jednotlivých grafů a upozornění na přehledu.
+- Důvod: Dvojice souvisejících grafů je vedle sebe, zatímco průběh a upozornění tvoří druhou srovnatelnou řadu.
+
 ## 3. Záznam změn
 - Všechny navržené úpravy se zapisují sem, a to i v případě, že jsou pouze v prototypové fázi.
 - Poté, co je rozhodnutí přijato, je považováno za platné pro další vývoj.

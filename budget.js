@@ -16,6 +16,21 @@
     return `${year}-${month}`;
   }
 
+  function getDaysInMonth(monthKey) {
+    const match = /^(\d{4})-(\d{2})$/.exec(String(monthKey || '').trim());
+    if (!match) {
+      return 31;
+    }
+
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    if (month < 1 || month > 12) {
+      return 31;
+    }
+
+    return new Date(year, month, 0).getDate();
+  }
+
   function formatMonthLabel(monthKey) {
     const key = String(monthKey || getMonthKey()).trim();
     const [year, month] = key.split('-');
@@ -132,6 +147,43 @@
     });
   }
 
+  function filterTransactions(transactions = [], categories = [], filters = {}) {
+    const query = String(filters.query || '').trim().toLocaleLowerCase('cs-CZ');
+    const type = String(filters.type || 'all');
+    const categoryId = String(filters.categoryId || 'all');
+    const categoryNames = new Map((Array.isArray(categories) ? categories : [])
+      .map((category) => [String(category.id), String(category.name || '')]));
+
+    return (Array.isArray(transactions) ? transactions : []).filter((transaction) => {
+      if (!transaction || typeof transaction !== 'object') {
+        return false;
+      }
+
+      if (type !== 'all' && transaction.type !== type) {
+        return false;
+      }
+
+      if (categoryId !== 'all' && String(transaction.categoryId || '') !== categoryId) {
+        return false;
+      }
+
+      if (!query) {
+        return true;
+      }
+
+      const categoryName = categoryNames.get(String(transaction.categoryId || '')) || transaction.categoryName || '';
+      const searchableText = [
+        categoryName,
+        transaction.description,
+        transaction.source,
+        transaction.date,
+        transaction.amount
+      ].join(' ').toLocaleLowerCase('cs-CZ');
+
+      return searchableText.includes(query);
+    });
+  }
+
   function computeCategoryUsage(category, transactions = []) {
     const categoryId = category?.id ? String(category.id) : '';
     const categoryName = String(category?.name || '').trim();
@@ -217,16 +269,23 @@
     ]);
 
     const sortedMonths = Array.from(monthSet).sort((left, right) => String(left).localeCompare(String(right)));
+    const filledMonths = sortedMonths.filter((monthKey) => getTransactionsForMonth(monthKey, transactions).length > 0);
+    let cumulativeBalance = 0;
 
-    return sortedMonths.map((monthKey) => {
+    return filledMonths.map((monthKey) => {
       const summary = computeBudgetSummary(monthKey, categories, transactions);
+      cumulativeBalance += summary.monthlyBalance;
+
+      const monthDate = new Date(Number(monthKey.split('-')[0]), Number(monthKey.split('-')[1]) - 1, 1);
       return {
         monthKey,
-        label: new Intl.DateTimeFormat('cs-CZ', { month: 'short' }).format(new Date(Number(monthKey.split('-')[0]), Number(monthKey.split('-')[1]) - 1, 1)).slice(0, 3),
+        label: new Intl.DateTimeFormat('cs-CZ', { month: 'short' }).format(monthDate).slice(0, 3),
+        year: monthDate.getFullYear(),
         planned: Math.max(summary.totalPlannedIncome - summary.totalPlannedExpenses, 0),
         spent: summary.totalActualExpenses,
         income: summary.totalActualIncome,
-        balance: summary.monthlyBalance
+        balance: summary.monthlyBalance,
+        cumulativeBalance
       };
     });
   }
@@ -283,6 +342,7 @@
     DEFAULT_CURRENCY,
     formatMonthLabel,
     getMonthKey,
+    getDaysInMonth,
     createDefaultMonthState,
     createDefaultCategories,
     normalizeCategory,
@@ -291,7 +351,8 @@
     buildBudgetTrend,
     buildBudgetAlerts,
     getCategoriesForMonth,
-    getTransactionsForMonth
+    getTransactionsForMonth,
+    filterTransactions
   };
 
   if (typeof module !== 'undefined' && module.exports) {

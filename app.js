@@ -221,7 +221,7 @@ function loadBudgetState() {
     const transactions = Array.isArray(parsed.transactions) ? parsed.transactions.map((transaction) => budgetLogic.normalizeTransaction ? budgetLogic.normalizeTransaction(transaction, selectedMonth) : transaction) : [];
 
     return {
-      selectedMonth: String(parsed.selectedMonth || selectedMonth),
+      selectedMonth,
       categories,
       transactions
     };
@@ -807,6 +807,8 @@ const foodListModeButton = document.getElementById('foodListModeButton');
 const foodMenuModeButton = document.getElementById('foodMenuModeButton');
 const navButtons = document.querySelectorAll('.nav-item');
 const appToggleButton = document.getElementById('appToggleButton');
+const mainGrid = document.querySelector('.main-grid');
+const weekTopbar = document.querySelector('.topbar');
 const moduleNavs = document.querySelectorAll('.module-nav');
 const freezerForm = document.getElementById('freezerForm');
 const stockForm = document.getElementById('stockForm');
@@ -839,20 +841,33 @@ let foodPickerMode = 'list';
 let activeFoodPickerMenuPage = '';
 
 const budgetMonthPicker = document.getElementById('budgetMonthPicker');
+const budgetLayout = document.getElementById('budgetLayout');
+const budgetViewHeading = document.getElementById('budgetViewHeading');
+const budgetSidePanel = document.getElementById('budgetSidePanel');
+const budgetTransactionFormHeading = document.getElementById('budgetTransactionFormHeading');
 const budgetSummaryCards = document.getElementById('budgetSummaryCards');
 const budgetCategoryForm = document.getElementById('budgetCategoryForm');
 const budgetCategoryList = document.getElementById('budgetCategoryList');
 const budgetTransactionForm = document.getElementById('budgetTransactionForm');
 const budgetTransactionList = document.getElementById('budgetTransactionList');
+const budgetTransactionDate = document.getElementById('budgetTransactionDate');
 const budgetTransactionCategory = document.getElementById('budgetTransactionCategory');
+const budgetTransactionSearch = document.getElementById('budgetTransactionSearch');
+const budgetTransactionTypeFilter = document.getElementById('budgetTransactionTypeFilter');
+const budgetTransactionCategoryFilter = document.getElementById('budgetTransactionCategoryFilter');
 const budgetAlertList = document.getElementById('budgetAlertList');
 const budgetPrevMonthBtn = document.getElementById('budgetPrevMonthBtn');
 const budgetNextMonthBtn = document.getElementById('budgetNextMonthBtn');
+const budgetCurrentMonthBtn = document.getElementById('budgetCurrentMonthBtn');
 const budgetChart = document.getElementById('budgetChart');
+const budgetUsageChart = document.getElementById('budgetUsageChart');
 const budgetCategoryIdInput = document.getElementById('budgetCategoryId');
+const budgetCategoryEditorHeading = document.getElementById('budgetCategoryEditorHeading');
+const budgetCategoryCancelBtn = document.getElementById('budgetCategoryCancelBtn');
 const budgetTransactionIdInput = document.getElementById('budgetTransactionId');
 const budgetCategorySubmitBtn = document.getElementById('budgetCategorySubmitBtn');
 const budgetTransactionSubmitBtn = document.getElementById('budgetTransactionSubmitBtn');
+const budgetTransactionCancelBtn = document.getElementById('budgetTransactionCancelBtn');
 const budgetTrendChart = document.getElementById('budgetTrendChart');
 
 let availableSupercategories = [];
@@ -1525,8 +1540,127 @@ function formatCurrency(value = 0) {
   }).format(numericValue);
 }
 
+function formatCompactCurrency(value = 0) {
+  return new Intl.NumberFormat('cs-CZ', {
+    style: 'currency',
+    currency: 'CZK',
+    notation: 'compact',
+    maximumFractionDigits: 1
+  }).format(Number(value || 0));
+}
+
+function renderBudgetTrendChart(trend) {
+  if (!budgetTrendChart) {
+    return;
+  }
+
+  if (!trend.length) {
+    budgetTrendChart.innerHTML = '<div class="budget-empty">Zatím nejsou vyplněné žádné měsíce.</div>';
+    return;
+  }
+
+  const width = Math.max(budgetTrendChart.clientWidth, 260);
+  const height = 250;
+  const margin = { top: 18, right: 14, bottom: 48, left: 76 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const values = trend.map((item) => Number(item.cumulativeBalance || 0));
+  let minValue = Math.min(0, ...values);
+  let maxValue = Math.max(0, ...values);
+  if (minValue === maxValue) {
+    const range = Math.max(Math.abs(minValue) * 0.1, 1000);
+    minValue -= range;
+    maxValue += range;
+  }
+
+  const pointX = (index) => trend.length === 1
+    ? margin.left + plotWidth / 2
+    : margin.left + (index / (trend.length - 1)) * plotWidth;
+  const pointY = (value) => margin.top + ((maxValue - value) / (maxValue - minValue)) * plotHeight;
+  const ticks = Array.from({ length: 5 }, (_, index) => maxValue - ((maxValue - minValue) * index / 4));
+  const path = trend.map((item, index) => `${index === 0 ? 'M' : 'L'} ${pointX(index)} ${pointY(Number(item.cumulativeBalance || 0))}`).join(' ');
+
+  budgetTrendChart.innerHTML = `
+    <svg class="budget-line-svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Kumulovaný vývoj zůstatku od prvního měsíce s transakcemi">
+      ${ticks.map((tick) => `
+        <line class="budget-line-grid" x1="${margin.left}" y1="${pointY(tick)}" x2="${width - margin.right}" y2="${pointY(tick)}"></line>
+        <text class="budget-line-axis-label" x="${margin.left - 8}" y="${pointY(tick) + 4}" text-anchor="end">${formatCompactCurrency(tick)}</text>
+      `).join('')}
+      <path class="budget-line-path" d="${path}"></path>
+      ${trend.map((item, index) => `
+        <circle class="budget-line-point" cx="${pointX(index)}" cy="${pointY(Number(item.cumulativeBalance || 0))}" r="4">
+          <title>${item.label} ${item.year}: ${formatCurrency(item.cumulativeBalance || 0)}</title>
+        </circle>
+        <text class="budget-line-month-label" x="${pointX(index)}" y="${height - 20}" text-anchor="middle">${item.label} ${item.year}</text>
+      `).join('')}
+    </svg>
+  `;
+}
+
+function renderBudgetPieChart(categoryBreakdown) {
+  if (!budgetChart) {
+    return;
+  }
+
+  const colors = ['#2d7a5f', '#d18b26', '#cf5b47', '#368b9b', '#678b37', '#a34f69', '#79733b', '#4f6f9f'];
+  const categories = categoryBreakdown
+    .filter((category) => category.type === 'expense' && Number(category.totalUsed || 0) > 0)
+    .sort((left, right) => Number(right.totalUsed) - Number(left.totalUsed));
+  const total = categories.reduce((sum, category) => sum + Number(category.totalUsed || 0), 0);
+
+  if (total <= 0) {
+    budgetChart.innerHTML = '<div class="budget-empty">V tomto měsíci nejsou žádné výdaje k zobrazení.</div>';
+    return;
+  }
+
+  const center = 90;
+  const radius = 82;
+  let angle = -90;
+  const slices = categories.map((category, index) => {
+    const value = Number(category.totalUsed || 0);
+    const startAngle = angle;
+    angle += (value / total) * 360;
+    const endAngle = angle;
+    const color = colors[index % colors.length];
+    const slicePath = categories.length === 1
+      ? ''
+      : (() => {
+          const startRadians = startAngle * Math.PI / 180;
+          const endRadians = endAngle * Math.PI / 180;
+          const startX = center + radius * Math.cos(startRadians);
+          const startY = center + radius * Math.sin(startRadians);
+          const endX = center + radius * Math.cos(endRadians);
+          const endY = center + radius * Math.sin(endRadians);
+          const largeArc = endAngle - startAngle > 180 ? 1 : 0;
+          return `M ${center} ${center} L ${startX} ${startY} A ${radius} ${radius} 0 ${largeArc} 1 ${endX} ${endY} Z`;
+        })();
+
+    return { category, value, color, percentage: value / total * 100, slicePath };
+  });
+
+  budgetChart.innerHTML = `
+    <div class="budget-pie-content">
+      <svg class="budget-pie-svg" viewBox="0 0 180 180" role="img" aria-label="Podíl výdajů podle kategorie, celkem ${formatCurrency(total)}">
+        ${slices.length === 1
+          ? `<circle cx="${center}" cy="${center}" r="${radius}" fill="${slices[0].color}"></circle>`
+          : slices.map((slice) => `<path d="${slice.slicePath}" fill="${slice.color}" stroke="white" stroke-width="1.5"></path>`).join('')}
+      </svg>
+      <ul class="budget-pie-legend">
+        ${slices.map((slice) => `
+          <li>
+            <span class="budget-pie-swatch" style="--chart-color: ${slice.color}"></span>
+            <span class="budget-pie-category">${slice.category.name}</span>
+            <strong>${formatCurrency(slice.value)} <small>${Math.round(slice.percentage)} %</small></strong>
+          </li>
+        `).join('')}
+      </ul>
+    </div>
+  `;
+}
+
 function getBudgetMonthOptions() {
-  const months = new Set([budgetState.selectedMonth || (budgetLogic.getMonthKey ? budgetLogic.getMonthKey(new Date()) : '2026-09')]);
+  const currentMonth = budgetLogic.getMonthKey ? budgetLogic.getMonthKey(new Date()) : new Date().toISOString().slice(0, 7);
+  const months = new Set([currentMonth, budgetState.selectedMonth || currentMonth]);
 
   budgetState.categories.forEach((category) => {
     if (category && category.monthKey) {
@@ -1541,6 +1675,24 @@ function getBudgetMonthOptions() {
   });
 
   return Array.from(months).sort().reverse();
+}
+
+function populateBudgetTransactionDays(monthKey = budgetState.selectedMonth, preferredDay = '') {
+  if (!budgetTransactionDate) {
+    return;
+  }
+
+  const today = new Date();
+  const currentMonth = budgetLogic.getMonthKey ? budgetLogic.getMonthKey(today) : today.toISOString().slice(0, 7);
+  const dayCount = budgetLogic.getDaysInMonth ? budgetLogic.getDaysInMonth(monthKey) : new Date(...monthKey.split('-').map(Number), 0).getDate();
+  const selectedDay = Number(preferredDay || budgetTransactionDate.value) || (monthKey === currentMonth ? today.getDate() : 1);
+  const normalizedDay = Math.min(Math.max(selectedDay, 1), dayCount);
+
+  budgetTransactionDate.innerHTML = Array.from({ length: dayCount }, (_, index) => {
+    const day = index + 1;
+    return `<option value="${day}">${day}</option>`;
+  }).join('');
+  budgetTransactionDate.value = String(normalizedDay);
 }
 
 function renderBudgetView() {
@@ -1558,6 +1710,7 @@ function renderBudgetView() {
     .map((monthKey) => `<option value="${monthKey}">${budgetLogic.formatMonthLabel ? budgetLogic.formatMonthLabel(monthKey) : monthKey}</option>`)
     .join('');
   budgetMonthPicker.value = currentMonth;
+  populateBudgetTransactionDays(currentMonth);
 
   const summary = budgetLogic.computeBudgetSummary
     ? budgetLogic.computeBudgetSummary(currentMonth, budgetState.categories, budgetState.transactions)
@@ -1591,6 +1744,17 @@ function renderBudgetView() {
       : '<option value="">Žádné kategorie</option>';
   }
 
+  if (budgetTransactionCategoryFilter) {
+    const selectedCategoryId = budgetTransactionCategoryFilter.value || 'all';
+    budgetTransactionCategoryFilter.innerHTML = [
+      '<option value="all">Všechny</option>',
+      ...selectedCategoryOptions.map((category) => `<option value="${category.id}">${category.name}</option>`)
+    ].join('');
+    budgetTransactionCategoryFilter.value = selectedCategoryOptions.some((category) => String(category.id) === selectedCategoryId)
+      ? selectedCategoryId
+      : 'all';
+  }
+
   budgetCategoryList.innerHTML = monthCategories.length
     ? monthCategories.map((category) => {
         const usage = summary.categoryBreakdown.find((item) => item.id === category.id) || { totalUsed: 0, remaining: category.limit || 0, usageRatio: 0 };
@@ -1613,24 +1777,32 @@ function renderBudgetView() {
   const monthTransactions = budgetLogic.getTransactionsForMonth
     ? budgetLogic.getTransactionsForMonth(currentMonth, budgetState.transactions)
     : [];
+  const visibleTransactions = budgetLogic.filterTransactions
+    ? budgetLogic.filterTransactions(monthTransactions, budgetState.categories, {
+        query: budgetTransactionSearch?.value || '',
+        type: budgetTransactionTypeFilter?.value || 'all',
+        categoryId: budgetTransactionCategoryFilter?.value || 'all'
+      })
+    : monthTransactions;
 
-  budgetTransactionList.innerHTML = monthTransactions.length
-    ? monthTransactions.map((transaction) => {
+  budgetTransactionList.innerHTML = visibleTransactions.length
+    ? visibleTransactions.map((transaction) => {
         const category = budgetState.categories.find((item) => String(item.id) === String(transaction.categoryId)) || { name: transaction.categoryName || 'Neznámá kategorie' };
         return `
           <li class="budget-transaction-row" data-transaction-id="${transaction.id}">
             <div>
               <strong>${category.name}</strong><br />
-              <small>${transaction.date} · ${transaction.description || 'Bez popisu'}</small>
+              <small>${transaction.date} · ${transaction.description || 'Bez popisu'}${transaction.source ? ` · ${transaction.source}` : ''}</small>
             </div>
             <div class="inventory-actions budget-list-actions">
               <span class="${transaction.type === 'income' ? 'positive' : 'negative'}">${transaction.type === 'income' ? '+' : '-'}${formatCurrency(transaction.amount || 0)}</span>
+              <button class="secondary budget-edit-transaction-btn" type="button" data-transaction-id="${transaction.id}">Upravit</button>
               <button class="secondary budget-delete-transaction-btn" type="button" data-transaction-id="${transaction.id}">Smazat</button>
             </div>
           </li>
         `;
       }).join('')
-    : '<li><div class="budget-empty">Žádné transakce pro tento měsíc.</div></li>';
+    : `<li><div class="budget-empty">${monthTransactions.length ? 'Filtru neodpovídá žádná transakce.' : 'Žádné transakce pro tento měsíc.'}</div></li>`;
 
   const alerts = budgetLogic.buildBudgetAlerts
     ? budgetLogic.buildBudgetAlerts(summary, budgetState.categories, budgetState.transactions)
@@ -1648,57 +1820,41 @@ function renderBudgetView() {
       `).join('')
     : '<li class="budget-empty">Bez varování. Rozpočet je v pořádku.</li>';
 
-  if (budgetChart) {
-    const expenseCategories = monthCategories.filter((category) => category.type === 'expense');
-    if (!expenseCategories.length) {
-      budgetChart.innerHTML = '<div class="budget-empty">Žádné výdajové kategorie pro tento měsíc.</div>';
-    } else {
-      budgetChart.innerHTML = expenseCategories.map((category) => {
-        const usage = summary.categoryBreakdown.find((item) => item.id === category.id) || { totalUsed: 0, useRatio: 0 };
-        const used = Number(usage.totalUsed || 0);
-        const limit = Number(category.limit || 0);
-        const percentage = limit > 0 ? Math.min(100, (used / limit) * 100) : 0;
+  renderBudgetPieChart(summary.categoryBreakdown);
 
-        return `
-          <div class="budget-chart-row">
-            <div class="budget-chart-labels">
-              <span>${category.name}</span>
-              <strong>${formatCurrency(used)} / ${formatCurrency(limit)}</strong>
+  if (budgetUsageChart) {
+    const expenseCategories = summary.categoryBreakdown.filter((category) => category.type === 'expense');
+    budgetUsageChart.innerHTML = expenseCategories.length
+      ? expenseCategories.map((category) => {
+          const used = Number(category.totalUsed || 0);
+          const limit = Number(category.limit || 0);
+          const usagePercent = limit > 0 ? Math.round((used / limit) * 100) : 0;
+          const barPercent = Math.min(100, usagePercent);
+
+          return `
+            <div class="budget-chart-row">
+              <div class="budget-chart-labels">
+                <span>${category.name}</span>
+                <strong>${formatCurrency(used)} / ${formatCurrency(limit)} · ${usagePercent}%</strong>
+              </div>
+              <div class="budget-progress" role="progressbar" aria-label="Využití budgetu ${category.name}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${barPercent}">
+                <span style="width: ${barPercent}%"></span>
+              </div>
             </div>
-            <div class="budget-progress"><span style="width: ${percentage}%"></span></div>
-          </div>
-        `;
-      }).join('');
-    }
+          `;
+        }).join('')
+      : '<div class="budget-empty">Nejsou nastavené žádné výdajové budgety.</div>';
   }
 
-  if (budgetTrendChart) {
-    const trendMonths = Array.from(new Set([
-      budgetState.selectedMonth,
-      ...budgetState.categories.map((category) => category.monthKey),
-      ...budgetState.transactions.map((transaction) => transaction.monthKey)
-    ].filter(Boolean))).sort();
-    const trend = budgetLogic.buildBudgetTrend ? budgetLogic.buildBudgetTrend(trendMonths.slice(-6), budgetState.categories, budgetState.transactions) : [];
-
-    if (!trend.length) {
-      budgetTrendChart.innerHTML = '<div class="budget-empty">Žádné údaje pro vývoj rozpočtu.</div>';
-    } else {
-      const maxSpent = Math.max(...trend.map((item) => Number(item.spent || 0)), 1);
-      budgetTrendChart.innerHTML = trend.map((item) => {
-        const height = Math.max(16, (Number(item.spent || 0) / maxSpent) * 100);
-        const barClass = Number(item.balance || 0) >= 0 ? 'positive' : 'negative';
-        return `
-          <div class="budget-trend-column">
-            <div class="budget-trend-bar-wrap">
-              <div class="budget-trend-bar ${barClass}" style="height: ${height}%"></div>
-            </div>
-            <span>${item.label}</span>
-            <small>${formatCurrency(item.balance || 0)}</small>
-          </div>
-        `;
-      }).join('');
-    }
-  }
+  const trendMonths = Array.from(new Set([
+    budgetState.selectedMonth,
+    ...budgetState.categories.map((category) => category.monthKey),
+    ...budgetState.transactions.map((transaction) => transaction.monthKey)
+  ].filter(Boolean))).sort();
+  const trend = budgetLogic.buildBudgetTrend
+    ? budgetLogic.buildBudgetTrend(trendMonths, budgetState.categories, budgetState.transactions)
+    : [];
+  renderBudgetTrendChart(trend);
 
   persistBudgetState();
 }
@@ -2041,11 +2197,19 @@ function setActiveApp(appName = 'foodplanner') {
     appToggleButton.setAttribute('aria-label', `Přepnout na ${nextTitle}`);
   }
 
+  if (weekTopbar) {
+    weekTopbar.classList.toggle('hidden', nextApp === 'budget');
+  }
+
+  if (mainGrid) {
+    mainGrid.classList.toggle('budget-active', nextApp === 'budget');
+  }
+
   moduleNavs.forEach((nav) => {
     nav.classList.toggle('hidden', nav.dataset.moduleNav !== nextApp);
   });
 
-  const nextView = nextApp === 'budget' ? 'budget' : 'overview';
+  const nextView = nextApp === 'budget' ? 'budget-overview' : 'overview';
   setActiveView(nextView);
 }
 
@@ -2057,13 +2221,34 @@ function setActiveView(viewName) {
   });
 
   document.querySelectorAll('[data-view-panel]').forEach((panel) => {
-    const shouldShow = panel.dataset.viewPanel === viewName;
+    const shouldShow = panel.dataset.viewPanel === viewName
+      || (panel.dataset.viewPanel === 'budget' && viewName.startsWith('budget-'));
     panel.classList.toggle('hidden', !shouldShow);
   });
 
   const sidePanel = document.querySelector('.side-panel');
   if (sidePanel) {
-    sidePanel.classList.toggle('hidden', viewName === 'freezer' || viewName === 'stock' || viewName === 'budget');
+    sidePanel.classList.toggle('hidden', viewName === 'freezer' || viewName === 'stock' || viewName.startsWith('budget-'));
+  }
+
+  const budgetHeadings = {
+    'budget-overview': 'Přehled',
+    'budget-transactions': 'Transakce',
+    'budget-categories': 'Budgety'
+  };
+  if (budgetHeadings[viewName]) {
+    if (budgetViewHeading) {
+      budgetViewHeading.textContent = budgetHeadings[viewName];
+    }
+    if (budgetLayout) {
+      budgetLayout.dataset.budgetView = viewName;
+    }
+    if (budgetTransactionFormHeading) {
+      budgetTransactionFormHeading.textContent = viewName === 'budget-overview' ? 'Rychlé přidání' : 'Přidat nebo upravit transakci';
+    }
+    if (budgetSidePanel) {
+      budgetSidePanel.classList.toggle('hidden', viewName === 'budget-categories');
+    }
   }
 
   if (viewName === 'overview') {
@@ -2082,7 +2267,7 @@ function setActiveView(viewName) {
     renderStockList();
   }
 
-  if (viewName === 'budget') {
+  if (viewName.startsWith('budget-')) {
     renderBudgetView();
   }
 }
@@ -2257,6 +2442,25 @@ if (budgetMonthPicker) {
   });
 }
 
+[
+  budgetTransactionSearch,
+  budgetTransactionTypeFilter,
+  budgetTransactionCategoryFilter
+].forEach((control) => {
+  if (control) {
+    control.addEventListener(control === budgetTransactionSearch ? 'input' : 'change', renderBudgetView);
+  }
+});
+
+if (budgetCurrentMonthBtn) {
+  budgetCurrentMonthBtn.addEventListener('click', () => {
+    budgetState.selectedMonth = budgetLogic.getMonthKey
+      ? budgetLogic.getMonthKey(new Date())
+      : new Date().toISOString().slice(0, 7);
+    renderBudgetView();
+  });
+}
+
 if (budgetPrevMonthBtn) {
   budgetPrevMonthBtn.addEventListener('click', async () => {
     const currentMonth = budgetState.selectedMonth || (budgetLogic.getMonthKey ? budgetLogic.getMonthKey(new Date()) : '2026-09');
@@ -2315,8 +2519,7 @@ if (budgetCategoryForm) {
     }
 
     budgetCategoryForm.reset();
-    budgetCategoryIdInput.value = '';
-    budgetCategorySubmitBtn.textContent = 'Přidat kategorii';
+    resetBudgetCategoryForm();
     renderBudgetView();
   });
 }
@@ -2329,7 +2532,11 @@ if (budgetTransactionForm) {
     const categoryId = budgetTransactionCategory?.value;
     const amount = Number(document.getElementById('budgetTransactionAmount')?.value || 0);
     const type = document.getElementById('budgetTransactionType')?.value || 'expense';
-    const date = document.getElementById('budgetTransactionDate')?.value || new Date().toISOString().slice(0, 10);
+    const day = Number(budgetTransactionDate?.value);
+    if (!day) {
+      return;
+    }
+    const date = `${budgetState.selectedMonth}-${String(day).padStart(2, '0')}`;
     const description = document.getElementById('budgetTransactionDescription')?.value?.trim() || 'Bez popisu';
     const source = document.getElementById('budgetTransactionSource')?.value?.trim() || '';
 
@@ -2340,7 +2547,7 @@ if (budgetTransactionForm) {
     const category = budgetState.categories.find((item) => String(item.id) === String(categoryId));
     const payload = {
       category_id: categoryId,
-      month_key: date.slice(0, 7),
+      month_key: budgetState.selectedMonth,
       transaction_type: type,
       amount,
       description,
@@ -2359,9 +2566,7 @@ if (budgetTransactionForm) {
       return;
     }
 
-    budgetTransactionForm.reset();
-    budgetTransactionIdInput.value = '';
-    budgetTransactionSubmitBtn.textContent = 'Zapsat transakci';
+    resetBudgetTransactionForm();
     renderBudgetView();
   });
 }
@@ -2382,6 +2587,9 @@ if (budgetCategoryList) {
     if (budgetCategoryIdInput) {
       budgetCategoryIdInput.value = category.id;
     }
+    if (budgetCategoryEditorHeading) {
+      budgetCategoryEditorHeading.textContent = 'Upravit budget';
+    }
     if (document.getElementById('budgetCategoryName')) {
       document.getElementById('budgetCategoryName').value = category.name;
     }
@@ -2397,9 +2605,26 @@ if (budgetCategoryList) {
     if (budgetCategorySubmitBtn) {
       budgetCategorySubmitBtn.textContent = 'Uložit úpravu';
     }
+    budgetCategoryCancelBtn?.classList.remove('hidden');
     window.scrollTo({ top: 0, behavior: 'smooth' });
   });
 }
+
+function resetBudgetCategoryForm() {
+  budgetCategoryForm?.reset();
+  if (budgetCategoryIdInput) {
+    budgetCategoryIdInput.value = '';
+  }
+  if (budgetCategorySubmitBtn) {
+    budgetCategorySubmitBtn.textContent = 'Vytvořit budget';
+  }
+  if (budgetCategoryEditorHeading) {
+    budgetCategoryEditorHeading.textContent = 'Nový budget';
+  }
+  budgetCategoryCancelBtn?.classList.add('hidden');
+}
+
+budgetCategoryCancelBtn?.addEventListener('click', resetBudgetCategoryForm);
 
 if (budgetTransactionList) {
   budgetTransactionList.addEventListener('click', async (event) => {
@@ -2416,12 +2641,12 @@ if (budgetTransactionList) {
       return;
     }
 
-    const row = event.target.closest('.budget-transaction-row');
-    if (!row) {
+    const editButton = event.target.closest('.budget-edit-transaction-btn');
+    if (!editButton) {
       return;
     }
 
-    const transactionId = row.dataset.transactionId;
+    const transactionId = editButton.dataset.transactionId;
     const transaction = budgetState.transactions.find((item) => String(item.id) === String(transactionId));
     if (!transaction) {
       return;
@@ -2442,17 +2667,41 @@ if (budgetTransactionList) {
     if (document.getElementById('budgetTransactionSource')) {
       document.getElementById('budgetTransactionSource').value = transaction.source || '';
     }
-    if (document.getElementById('budgetTransactionDate')) {
-      document.getElementById('budgetTransactionDate').value = transaction.date || new Date().toISOString().slice(0, 10);
-    }
+    populateBudgetTransactionDays(budgetState.selectedMonth, Number(String(transaction.date || '').slice(-2)));
     if (budgetTransactionCategory) {
       budgetTransactionCategory.value = transaction.categoryId || budgetTransactionCategory.value;
     }
     if (budgetTransactionSubmitBtn) {
       budgetTransactionSubmitBtn.textContent = 'Uložit transakci';
     }
+    if (budgetTransactionFormHeading) {
+      budgetTransactionFormHeading.textContent = 'Upravit transakci';
+    }
+    budgetTransactionCancelBtn?.classList.remove('hidden');
   });
 }
+
+function resetBudgetTransactionForm() {
+  budgetTransactionForm?.reset();
+  if (budgetTransactionDate) {
+    budgetTransactionDate.value = '';
+  }
+  populateBudgetTransactionDays(budgetState.selectedMonth, '');
+  if (budgetTransactionIdInput) {
+    budgetTransactionIdInput.value = '';
+  }
+  if (budgetTransactionSubmitBtn) {
+    budgetTransactionSubmitBtn.textContent = 'Zapsat transakci';
+  }
+  if (budgetTransactionFormHeading) {
+    budgetTransactionFormHeading.textContent = budgetLayout?.dataset.budgetView === 'budget-overview'
+      ? 'Rychlé přidání'
+      : 'Přidat nebo upravit transakci';
+  }
+  budgetTransactionCancelBtn?.classList.add('hidden');
+}
+
+budgetTransactionCancelBtn?.addEventListener('click', resetBudgetTransactionForm);
 
 if (foodPickerSupercategory) {
   foodPickerSupercategory.addEventListener('change', renderFoodPickerModal);

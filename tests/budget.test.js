@@ -3,14 +3,22 @@ const assert = require('node:assert/strict');
 
 const {
   getMonthKey,
+  getDaysInMonth,
   normalizeTransaction,
   computeBudgetSummary,
   buildBudgetAlerts,
-  buildBudgetTrend
+  buildBudgetTrend,
+  filterTransactions
 } = require('../budget.js');
 
 test('měsíc se vytvoří ve formátu YYYY-MM', () => {
   assert.equal(getMonthKey(new Date('2026-09-15T12:00:00')), '2026-09');
+});
+
+test('počet dnů odpovídá měsíci včetně přestupného února', () => {
+  assert.equal(getDaysInMonth('2026-02'), 28);
+  assert.equal(getDaysInMonth('2024-02'), 29);
+  assert.equal(getDaysInMonth('2026-04'), 30);
 });
 
 test('souhrn měsíčního rozpočtu počítá plán, skutečnost a zůstatek', () => {
@@ -76,6 +84,20 @@ test('vývoj rozpočtu napříč měsíci počítá celkový zůstatek a výdaje
   assert.equal(trend[1].balance, 23000);
 });
 
+test('kumulovaný vývoj započítá bilanci prvního i dalších vyplněných měsíců', () => {
+  const transactions = [
+    { id: 'tx-1', monthKey: '2026-08', type: 'expense', amount: 7000 },
+    { id: 'tx-2', monthKey: '2026-10', type: 'income', amount: 5000 },
+    { id: 'tx-3', monthKey: '2026-10', type: 'expense', amount: 2000 },
+    { id: 'tx-4', monthKey: '2026-12', type: 'expense', amount: 4000 }
+  ];
+
+  const trend = buildBudgetTrend(['2026-07', '2026-08', '2026-10', '2026-12'], [], transactions);
+
+  assert.deepEqual(trend.map((item) => item.monthKey), ['2026-08', '2026-10', '2026-12']);
+  assert.deepEqual(trend.map((item) => item.cumulativeBalance), [-7000, -4000, -8000]);
+});
+
 test('normalizace transakce přijme reálná pole z databáze a zachová zobrazení v rozpočtu', () => {
   const normalized = normalizeTransaction({
     id: 'tx-db-1',
@@ -104,4 +126,24 @@ test('měsíc transakce se při načtení odvodí z data i při nesouladu s mont
   });
 
   assert.equal(normalized.monthKey, '2026-09');
+});
+
+test('transakce lze filtrovat podle typu, kategorie a hledaného textu', () => {
+  const categories = [
+    { id: 'food', name: 'Potraviny' },
+    { id: 'salary', name: 'Mzda' }
+  ];
+  const transactions = [
+    { id: 'tx-1', categoryId: 'food', type: 'expense', description: 'Nákup', source: 'Albert', date: '2026-09-05', amount: 1250 },
+    { id: 'tx-2', categoryId: 'salary', type: 'income', description: 'Výplata', source: 'Zaměstnavatel', date: '2026-09-01', amount: 35000 }
+  ];
+
+  const filtered = filterTransactions(transactions, categories, {
+    query: 'albert',
+    type: 'expense',
+    categoryId: 'food'
+  });
+
+  assert.deepEqual(filtered.map((transaction) => transaction.id), ['tx-1']);
+  assert.deepEqual(filterTransactions(transactions, categories, { query: '35000' }).map((transaction) => transaction.id), ['tx-2']);
 });
