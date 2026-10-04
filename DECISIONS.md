@@ -10,6 +10,11 @@ Tento soubor je hlavním zdrojem pravdy o projektu. Všechny důležité rozhodn
 
 ## 2. Rozhodnutí k projektu
 
+### 2026-10-04 – Zachování zvoleného modulu v URL
+- Rozhodnutí: Volba mezi Food Plannerem a Budget Plannerem se ukládá do parametru URL `app=food` nebo `app=budget`; modul se obnoví po načtení stránky a reaguje na navigaci zpět/vpřed.
+- Kontext: Uživatel požádal, aby po obnovení stránky zůstala otevřená stejná část aplikace.
+- Důvod: URL je sdílitelný a obnovitelný zdroj stavu, který nevyžaduje ukládání volby do dat aplikace.
+
 ### 2026-09-18 – Plánování po týdnech
 - Rozhodnutí: Aplikace pracuje s plánem po týdnech, ne po jednotlivých dnech.
 - Kontext: Klient upřesnil, že plánování se má dělat na celý týden, přičemž každý týden začíná pondělím a je identifikován datem prvního dne v týdnu.
@@ -150,6 +155,13 @@ Tento soubor je hlavním zdrojem pravdy o projektu. Všechny důležité rozhodn
 - Rozhodnutí: Při odečtení posledního množství se položka odstraní z uloženého seznamu i zobrazení.
 - Kontext: Uživatel upozornil, že záznam s nulovým množstvím nemá zůstávat v inventáři.
 - Důvod: Seznam zásob má zobrazovat pouze dostupné množství.
+
+### 2026-10-04 – Ukládání inventáře do databáze
+- Rozhodnutí: Mrazák a zásoby se načítají a mění přes serverové API nad tabulkami `freezer_items` a `stock_items`; zápisy vyžadují platnou relaci pozvaného uživatele.
+- Kontext: Uživatel požádal o napojení přidávání, změny množství a odstraňování inventáře na připravené databázové tabulky.
+- Důvod: Databáze je společným zdrojem dat pro zařízení domácnosti; server používá privilegovaný klíč pouze po ověření přihlášení a nabídne pouze povolené tabulky.
+- Doplnění: Stávající lokální položky se převedou do databáze pouze tehdy, je-li jejich tabulka prázdná; lokální úložiště pak slouží jako cache.
+- Doplnění: Uživatel potvrdil zachování vazby položek mrazáku na katalog jídel přes `food_id`. Vzdálené Data API tento sloupec neuvádí, proto je připravena idempotentní migrace `supabase_inventory_migration.sql`, která ho doplní nebo obnoví cache API.
 
 ### 2026-10-04 – Aktuální měsíc v přehledu rozpočtu
 - Rozhodnutí: Po obnovení stránky se rozpočet otevře na aktuálním měsíci. Tlačítko „Aktuální“ vrátí měsíční filtr k dnešnímu měsíci a týdenní ovládání se v modulu rozpočtu nezobrazuje.

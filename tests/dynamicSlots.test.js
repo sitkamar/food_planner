@@ -89,8 +89,15 @@ const {
   getInventoryStep,
   getInventorySummary,
   buildFoodSubmissionPayload,
+  getAppFromSearch,
   weekPlanData
 } = require('../app.js');
+
+test('část aplikace se určí z parametru URL', () => {
+  assert.equal(getAppFromSearch('?app=budget'), 'budget');
+  assert.equal(getAppFromSearch('?app=food'), 'foodplanner');
+  assert.equal(getAppFromSearch(''), 'foodplanner');
+});
 
 test('výchozí plán má jeden slot v každé základní kategorii a je prázdný', () => {
   const initialWeek = weekPlanData[0];

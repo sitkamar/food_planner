@@ -7,6 +7,10 @@ const { createClient } = require('@supabase/supabase-js');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const baseDir = __dirname;
+const inventoryTables = Object.freeze({
+  freezer: 'freezer_items',
+  stock: 'stock_items'
+});
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -46,6 +50,96 @@ function normalizeFoodRow(row, categoryMap, supercategoryMap, subcategoryMap, ty
     classification: [supercategory, category, subcategory].filter(Boolean).join(' / '),
     fullLabel: [supercategory, category, subcategory].filter(Boolean).join(' · ')
   };
+}
+
+function getInventoryTable(type) {
+  return inventoryTables[String(type || '')] || null;
+}
+
+function isValidInventoryDate(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return false;
+  }
+
+  const date = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+}
+
+function createInventoryPayload(type, rawItem = {}) {
+  if (!getInventoryTable(type)) {
+    throw Object.assign(new Error('Neznámý typ inventáře.'), { status: 400 });
+  }
+
+  const name = String(rawItem.name || '').trim();
+  const quantity = Number(rawItem.quantity);
+
+  if (!name || name.length > 200) {
+    throw Object.assign(new Error('Zadejte název položky do 200 znaků.'), { status: 400 });
+  }
+
+  if (!Number.isFinite(quantity) || quantity < 0 || quantity > 99999999.99) {
+    throw Object.assign(new Error('Množství musí být platné nezáporné číslo.'), { status: 400 });
+  }
+
+  if (type === 'stock') {
+    const unit = String(rawItem.unit || 'kg').trim();
+    if (!['kg', 'balení'].includes(unit)) {
+      throw Object.assign(new Error('Zásoby lze evidovat pouze v kg nebo baleních.'), { status: 400 });
+    }
+    if (unit === 'balení' && !Number.isInteger(quantity)) {
+      throw Object.assign(new Error('Počet balení musí být celé číslo.'), { status: 400 });
+    }
+
+    const expiresAt = rawItem.expires_at ?? rawItem.expiresAt ?? null;
+    if (expiresAt && !isValidInventoryDate(String(expiresAt))) {
+      throw Object.assign(new Error('Datum spotřeby není platné.'), { status: 400 });
+    }
+
+    return {
+      name,
+      quantity,
+      unit,
+      category: String(rawItem.category || '').trim() || null,
+      expires_at: expiresAt || null,
+      notes: String(rawItem.notes || '').trim() || null
+    };
+  }
+
+  const foodId = rawItem.food_id ?? rawItem.foodId ?? null;
+  const normalizedFoodId = foodId === null || foodId === '' ? null : Number(foodId);
+  if (normalizedFoodId !== null && (!Number.isSafeInteger(normalizedFoodId) || normalizedFoodId <= 0)) {
+    throw Object.assign(new Error('Vybrané jídlo není platné.'), { status: 400 });
+  }
+
+  const addedAt = rawItem.added_at ?? rawItem.addedAt;
+  if (addedAt && !isValidInventoryDate(String(addedAt))) {
+    throw Object.assign(new Error('Datum uložení není platné.'), { status: 400 });
+  }
+
+  return {
+    food_id: normalizedFoodId,
+    name,
+    quantity,
+    unit: String(rawItem.unit || 'porce').trim() || 'porce',
+    ...(addedAt ? { added_at: String(addedAt) } : {}),
+    notes: String(rawItem.notes || '').trim() || null
+  };
+}
+
+function validateInventoryId(value) {
+  const id = String(value || '');
+  return /^\d+$/.test(id) && /[1-9]/.test(id) ? id : null;
+}
+
+function validateInventoryQuantity(value, unit = '') {
+  const quantity = Number(value);
+  if (!Number.isFinite(quantity) || quantity < 0 || quantity > 99999999.99) {
+    throw Object.assign(new Error('Množství musí být platné nezáporné číslo.'), { status: 400 });
+  }
+  if (unit === 'balení' && !Number.isInteger(quantity)) {
+    throw Object.assign(new Error('Počet balení musí být celé číslo.'), { status: 400 });
+  }
+  return quantity;
 }
 
 app.use(express.json());
@@ -490,6 +584,200 @@ app.get('/api/access-check', async (req, res) => {
   } catch (error) {
     console.error('Chyba při kontrole přístupu:', error);
     return res.status(500).json({ ok: false, message: 'Nepodařilo se ověřit přístup.' });
+  }
+});
+
+async function requireInventoryAccess(req, res, next) {
+  if (!supabaseAdmin) {
+    return res.status(503).json({ ok: false, message: 'Chybí konfigurace Supabase.' });
+  }
+
+  const authorizationHeader = req.headers.authorization || '';
+  const token = authorizationHeader.startsWith('Bearer ') ? authorizationHeader.slice(7) : '';
+  if (!token) {
+    return res.status(401).json({ ok: false, message: 'Chybí přístupový token.' });
+  }
+
+  try {
+    const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+    if (error || !user?.email) {
+      return res.status(403).json({ ok: false, message: 'Neplatná nebo vypršelá relace.' });
+    }
+
+    const { data: invite, error: inviteError } = await supabaseAdmin
+      .from('access_invites')
+      .select('id')
+      .eq('email', user.email.trim().toLowerCase())
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (inviteError) {
+      throw inviteError;
+    }
+    if (!invite) {
+      return res.status(403).json({ ok: false, message: 'Váš e-mail není na seznamu pozvaných uživatelů.' });
+    }
+
+    return next();
+  } catch (error) {
+    console.error('Chyba při ověřování přístupu k inventáři:', error);
+    return res.status(500).json({ ok: false, message: 'Nepodařilo se ověřit přístup k inventáři.' });
+  }
+}
+
+app.get('/api/inventory', requireInventoryAccess, async (req, res) => {
+  try {
+    const [freezerResult, stockResult] = await Promise.all([
+      supabaseAdmin.from(inventoryTables.freezer).select('*').order('id', { ascending: true }),
+      supabaseAdmin.from(inventoryTables.stock).select('*').order('id', { ascending: true })
+    ]);
+
+    if (freezerResult.error || stockResult.error) {
+      throw freezerResult.error || stockResult.error;
+    }
+
+    return res.json({
+      ok: true,
+      freezer: freezerResult.data || [],
+      stock: stockResult.data || []
+    });
+  } catch (error) {
+    console.error('Chyba při načítání inventáře z databáze:', error);
+    return res.status(500).json({ ok: false, message: 'Nepodařilo se načíst inventář z databáze.' });
+  }
+});
+
+app.post('/api/inventory/:type', requireInventoryAccess, async (req, res) => {
+  const table = getInventoryTable(req.params.type);
+  if (!table) {
+    return res.status(400).json({ ok: false, message: 'Neznámý typ inventáře.' });
+  }
+
+  try {
+    const inputItems = Array.isArray(req.body) ? req.body : [req.body];
+    if (!inputItems.length || inputItems.length > 500) {
+      return res.status(400).json({ ok: false, message: 'Počet položek pro uložení není platný.' });
+    }
+
+    const records = inputItems.map((item) => createInventoryPayload(req.params.type, item));
+    const { data, error } = await supabaseAdmin.from(table).insert(records).select('*');
+    if (error) {
+      throw error;
+    }
+
+    return res.status(201).json({ ok: true, items: data || [] });
+  } catch (error) {
+    if (error.status === 400) {
+      return res.status(400).json({ ok: false, message: error.message });
+    }
+    if (error.code === 'PGRST204' && String(error.message || '').includes('food_id')) {
+      return res.status(503).json({
+        ok: false,
+        message: 'Schéma mrazáku v databázi není aktuální. Spusťte SQL migraci supabase_inventory_migration.sql.'
+      });
+    }
+    console.error('Chyba při ukládání inventáře do databáze:', error);
+    return res.status(500).json({ ok: false, message: 'Nepodařilo se uložit položku inventáře.' });
+  }
+});
+
+app.patch('/api/inventory/:type/:id', requireInventoryAccess, async (req, res) => {
+  const table = getInventoryTable(req.params.type);
+  const id = validateInventoryId(req.params.id);
+
+  if (!table || !id) {
+    return res.status(400).json({ ok: false, message: 'Položka inventáře není platná.' });
+  }
+
+  try {
+    let unit = '';
+    if (req.params.type === 'stock') {
+      const { data: existingItem, error: lookupError } = await supabaseAdmin
+        .from(table)
+        .select('unit')
+        .eq('id', id)
+        .maybeSingle();
+
+      if (lookupError) {
+        throw lookupError;
+      }
+      if (!existingItem) {
+        return res.status(404).json({ ok: false, message: 'Položka inventáře nebyla nalezena.' });
+      }
+      unit = existingItem.unit;
+      if (!['kg', 'balení'].includes(unit)) {
+        return res.status(400).json({ ok: false, message: 'Zásoby lze evidovat pouze v kg nebo baleních.' });
+      }
+    }
+
+    const quantity = validateInventoryQuantity(req.body?.quantity, unit);
+    if (quantity === 0) {
+      const { data, error } = await supabaseAdmin
+        .from(table)
+        .delete()
+        .eq('id', id)
+        .select('id')
+        .maybeSingle();
+
+      if (error) {
+        throw error;
+      }
+      if (!data) {
+        return res.status(404).json({ ok: false, message: 'Položka inventáře nebyla nalezena.' });
+      }
+      return res.json({ ok: true, deleted: true });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from(table)
+      .update({ quantity, updated_at: new Date().toISOString() })
+      .eq('id', id)
+      .select('*')
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+    if (!data) {
+      return res.status(404).json({ ok: false, message: 'Položka inventáře nebyla nalezena.' });
+    }
+
+    return res.json({ ok: true, item: data });
+  } catch (error) {
+    if (error.status === 400) {
+      return res.status(400).json({ ok: false, message: error.message });
+    }
+    console.error('Chyba při úpravě inventáře v databázi:', error);
+    return res.status(500).json({ ok: false, message: 'Nepodařilo se upravit položku inventáře.' });
+  }
+});
+
+app.delete('/api/inventory/:type/:id', requireInventoryAccess, async (req, res) => {
+  const table = getInventoryTable(req.params.type);
+  const id = validateInventoryId(req.params.id);
+  if (!table || !id) {
+    return res.status(400).json({ ok: false, message: 'Položka inventáře není platná.' });
+  }
+
+  try {
+    const { data, error } = await supabaseAdmin
+      .from(table)
+      .delete()
+      .eq('id', id)
+      .select('id')
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+    if (!data) {
+      return res.status(404).json({ ok: false, message: 'Položka inventáře nebyla nalezena.' });
+    }
+
+    return res.json({ ok: true, deleted: true });
+  } catch (error) {
+    console.error('Chyba při mazání inventáře z databáze:', error);
+    return res.status(500).json({ ok: false, message: 'Nepodařilo se odstranit položku inventáře.' });
   }
 });
 
@@ -1057,6 +1345,16 @@ app.get('/', (req, res) => {
 
 app.use(express.static(baseDir));
 
-app.listen(PORT, () => {
-  console.log(`Food Planner běží na http://localhost:${PORT}`);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`Food Planner běží na http://localhost:${PORT}`);
+  });
+}
+
+module.exports = {
+  app,
+  createInventoryPayload,
+  getInventoryTable,
+  validateInventoryId,
+  validateInventoryQuantity
+};
