@@ -225,6 +225,23 @@
     };
   }
 
+  function computeTotalBalance(transactions = []) {
+    return (Array.isArray(transactions) ? transactions : []).reduce((balance, transaction) => {
+      if (!transaction || typeof transaction !== 'object') {
+        return balance;
+      }
+
+      const amount = normalizeNumber(transaction.amount, 0);
+      if (transaction.type === 'income') {
+        return balance + amount;
+      }
+      if (transaction.type === 'expense') {
+        return balance - amount;
+      }
+      return balance;
+    }, 0);
+  }
+
   function computeBudgetSummary(monthKey, categories = [], transactions = []) {
     const monthCategories = getCategoriesForMonth(monthKey, categories);
     const monthTransactions = getTransactionsForMonth(monthKey, transactions);
@@ -348,6 +365,7 @@
     normalizeCategory,
     normalizeTransaction,
     computeBudgetSummary,
+    computeTotalBalance,
     buildBudgetTrend,
     buildBudgetAlerts,
     getCategoriesForMonth,

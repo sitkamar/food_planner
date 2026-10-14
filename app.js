@@ -1715,23 +1715,35 @@ function renderBudgetView() {
   const summary = budgetLogic.computeBudgetSummary
     ? budgetLogic.computeBudgetSummary(currentMonth, budgetState.categories, budgetState.transactions)
     : { totalPlannedIncome: 0, totalPlannedExpenses: 0, totalActualIncome: 0, totalActualExpenses: 0, monthlyBalance: 0, remainingBudget: 0, categoryBreakdown: [] };
+  const totalBalance = budgetLogic.computeTotalBalance
+    ? budgetLogic.computeTotalBalance(budgetState.transactions)
+    : 0;
+  const monthlyResultLabel = summary.monthlyBalance < 0
+    ? 'Ztráta'
+    : summary.monthlyBalance > 0 ? 'Výdělek' : 'Na nule';
 
   budgetSummaryCards.innerHTML = `
     <div class="budget-metric summary-card accent">
-      <span class="label">Plánovaný příjem</span>
-      <strong>${formatCurrency(summary.totalPlannedIncome || 0)}</strong>
+      <span class="label">Příjmy</span>
+      <div class="budget-metric-pair">
+        <div><span>Plánované</span><strong>${formatCurrency(summary.totalPlannedIncome || 0)}</strong></div>
+        <div><span>Skutečné</span><strong>${formatCurrency(summary.totalActualIncome || 0)}</strong></div>
+      </div>
     </div>
     <div class="budget-metric summary-card">
-      <span class="label">Plánované výdaje</span>
-      <strong>${formatCurrency(summary.totalPlannedExpenses || 0)}</strong>
+      <span class="label">Výdaje</span>
+      <div class="budget-metric-pair">
+        <div><span>Plánované</span><strong>${formatCurrency(summary.totalPlannedExpenses || 0)}</strong></div>
+        <div><span>Skutečné</span><strong>${formatCurrency(summary.totalActualExpenses || 0)}</strong></div>
+      </div>
     </div>
     <div class="budget-metric summary-card">
-      <span class="label">Skutečné výdaje</span>
-      <strong>${formatCurrency(summary.totalActualExpenses || 0)}</strong>
+      <span class="label">${monthlyResultLabel}</span>
+      <strong class="${summary.monthlyBalance < 0 ? 'negative' : 'positive'}">${formatCurrency(Math.abs(summary.monthlyBalance || 0))}</strong>
     </div>
     <div class="budget-metric summary-card">
-      <span class="label">Zůstatek</span>
-      <strong>${formatCurrency(summary.monthlyBalance || 0)}</strong>
+      <span class="label">Celkový zůstatek</span>
+      <strong class="${totalBalance < 0 ? 'negative' : 'positive'}">${formatCurrency(totalBalance)}</strong>
     </div>
   `;
 

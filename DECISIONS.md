@@ -204,6 +204,11 @@ Tento soubor je hlavním zdrojem pravdy o projektu. Všechny důležité rozhodn
 - Kontext: Uživatel požádal o upřednostnění přidání transakce a o čitelnější seznam na telefonu, přičemž sekce Budgety má zůstat beze změny.
 - Důvod: Mobilní tok dává nejčastější akci na začátek a umožňuje přečíst informace o transakci v dostupné šířce displeje.
 
+### 2026-10-09 – Čtyři souhrnné ukazatele přehledu
+- Rozhodnutí: Souhrn přehledu zobrazuje plánované a skutečné příjmy, plánované a skutečné výdaje, výdělek nebo ztrátu zvoleného měsíce a celkový zůstatek vypočtený ze všech evidovaných transakcí.
+- Kontext: Uživatel požádal o změnu obsahu čtyř současných souhrnných buněk bez změny jejich počtu.
+- Důvod: Oddělení měsíčního výsledku od celkového součtu historie umožňuje rozlišit výsledek daného měsíce a zůstatek domácnosti.
+
 ## 3. Záznam změn
 - Všechny navržené úpravy se zapisují sem, a to i v případě, že jsou pouze v prototypové fázi.
 - Poté, co je rozhodnutí přijato, je považováno za platné pro další vývoj.

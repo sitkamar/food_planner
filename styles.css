@@ -1203,6 +1203,26 @@ button {
   color: #183b30;
 }
 
+.budget-metric-pair {
+  display: grid;
+  gap: 8px;
+}
+
+.budget-metric-pair > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.budget-metric-pair strong {
+  color: var(--text);
+  font-size: 1rem;
+  white-space: nowrap;
+}
+
 .budget-category-row,
 .budget-transaction-row {
   align-items: center;

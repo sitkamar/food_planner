@@ -6,6 +6,7 @@ const {
   getDaysInMonth,
   normalizeTransaction,
   computeBudgetSummary,
+  computeTotalBalance,
   buildBudgetAlerts,
   buildBudgetTrend,
   filterTransactions
@@ -41,6 +42,16 @@ test('souhrn měsíčního rozpočtu počítá plán, skutečnost a zůstatek', 
   assert.equal(summary.totalActualIncome, 35000);
   assert.equal(summary.totalActualExpenses, 13100);
   assert.equal(summary.monthlyBalance, 21900);
+});
+
+test('celkový zůstatek sečte příjmy a odečte výdaje napříč všemi měsíci', () => {
+  const transactions = [
+    { type: 'income', amount: 35000, monthKey: '2026-09' },
+    { type: 'expense', amount: 13100, monthKey: '2026-09' },
+    { type: 'expense', amount: 5000, monthKey: '2026-10' }
+  ];
+
+  assert.equal(computeTotalBalance(transactions), 16900);
 });
 
 test('varování se aktivuje při překročení rozpočtu i při kritickém zůstatku', () => {
