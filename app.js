@@ -1035,7 +1035,10 @@ function renderFoodList(foods) {
             <strong>${foodName}</strong><br />
             <small>${classification} · Přidáno ${formatFoodDate(food.createdAt)}</small>
           </div>
-          <button class="secondary" type="button" data-food-edit-id="${escapeFoodOption(food.id)}" aria-label="Upravit ${foodName}">Upravit</button>
+          <div class="food-item-actions">
+            <button class="secondary" type="button" data-food-edit-id="${escapeFoodOption(food.id)}" aria-label="Upravit ${foodName}">Upravit</button>
+            <button class="secondary" type="button" data-food-delete-id="${escapeFoodOption(food.id)}" aria-label="Odebrat ${foodName} (${classification})">Odebrat</button>
+          </div>
         </li>
       `;
     })
@@ -1085,7 +1088,10 @@ function renderFoodMenu(foods) {
             <li>
               <span class="food-menu-dish-name">${escapeFoodOption(food.name || 'Bez názvu')}</span>
               ${food.subcategory ? `<span class="food-menu-dish-subcategory">(${escapeFoodOption(food.subcategory)})</span>` : ''}
-              <button class="secondary" type="button" data-food-edit-id="${escapeFoodOption(food.id)}" aria-label="Upravit ${escapeFoodOption(food.name || 'jídlo')}">Upravit</button>
+              <div class="food-item-actions">
+                <button class="secondary" type="button" data-food-edit-id="${escapeFoodOption(food.id)}" aria-label="Upravit ${escapeFoodOption(food.name || 'jídlo')}">Upravit</button>
+                <button class="secondary" type="button" data-food-delete-id="${escapeFoodOption(food.id)}" aria-label="Odebrat ${escapeFoodOption(food.name || 'jídlo')} (${escapeFoodOption([food.supercategory, food.category, food.subcategory].filter(Boolean).join(' · '))})">Odebrat</button>
+              </div>
             </li>
           `).join('')}
         </ul>
@@ -1107,6 +1113,58 @@ function renderFoodCatalog() {
 
   renderFoodList(sortFoodItems(visibleFoods));
   renderFoodMenu(visibleFoods);
+}
+
+function buildFoodDeletionConfirmation(food) {
+  return [
+    'Opravdu chcete odebrat toto jídlo z katalogu?',
+    '',
+    `Název: ${food.name || 'Bez názvu'}`,
+    `Nadkategorie: ${food.supercategory || 'Neuvedena'}`,
+    `Kategorie: ${food.category || 'Neuvedena'}`,
+    `Podkategorie: ${food.subcategory || 'Neuvedena'}`
+  ].join('\n');
+}
+
+async function removeFoodFromCatalog(foodId) {
+  const foodIndex = foodCatalog.findIndex((food) => String(food.id) === String(foodId));
+  const food = foodCatalog[foodIndex];
+
+  if (!food || !window.confirm(buildFoodDeletionConfirmation(food))) {
+    return;
+  }
+
+  try {
+    const { data: { session } = {}, error: sessionError } = await window.foodPlannerSupabase?.auth.getSession() || {};
+    if (sessionError || !session?.access_token) {
+      throw new Error('Přihlášení vypršelo. Přihlaste se znovu.');
+    }
+
+    const response = await fetch(`/api/foods/${encodeURIComponent(food.id)}`, {
+      method: 'DELETE',
+      headers: {
+        Authorization: `Bearer ${session.access_token}`
+      }
+    });
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(result.message || 'Nepodařilo se odebrat jídlo z katalogu.');
+    }
+
+    foodCatalog.splice(foodIndex, 1);
+    if (String(foodIdInput.value) === String(food.id)) {
+      resetFoodForm();
+    }
+    refreshFoodTaxonomyOptions();
+    populateInventoryFoodSelects();
+    renderFoodCatalog();
+    renderFreezerFoodSelection();
+    renderWeekPlan();
+  } catch (error) {
+    console.error('Chyba při odebírání jídla z katalogu:', error);
+    window.alert(error.message || 'Nepodařilo se odebrat jídlo z katalogu.');
+  }
 }
 
 function setFoodCatalogMode(mode) {
@@ -2195,8 +2253,26 @@ function closeFoodPickerModal() {
   foodPickerState.slotKey = null;
 }
 
-function setActiveApp(appName = 'foodplanner') {
+function getAppFromSearch(search = '') {
+  return new URLSearchParams(search).get('app') === 'budget' ? 'budget' : 'foodplanner';
+}
+
+function updateAppUrl(appName) {
+  if (typeof window === 'undefined' || !window.location || !window.history?.pushState) {
+    return;
+  }
+
+  const url = new URL(window.location.href);
+  url.searchParams.set('app', appName === 'budget' ? 'budget' : 'food');
+  window.history.pushState({}, '', url);
+}
+
+function setActiveApp(appName = 'foodplanner', updateUrl = true) {
   const nextApp = appName === 'budget' ? 'budget' : 'foodplanner';
+
+  if (updateUrl) {
+    updateAppUrl(nextApp);
+  }
 
   if (typeof document !== 'undefined' && document.body) {
     document.body.dataset.activeApp = nextApp;
@@ -2285,7 +2361,7 @@ function setActiveView(viewName) {
 }
 
 if (typeof document !== 'undefined' && document.body) {
-  document.body.dataset.activeApp = 'foodplanner';
+  setActiveApp(getAppFromSearch(window.location?.search || ''), false);
 }
 
 navButtons.forEach((button) => {
@@ -2305,6 +2381,12 @@ if (appToggleButton) {
   appToggleButton.addEventListener('click', () => {
     const activeApp = document.body.dataset.activeApp || 'foodplanner';
     setActiveApp(activeApp === 'budget' ? 'foodplanner' : 'budget');
+  });
+}
+
+if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+  window.addEventListener('popstate', () => {
+    setActiveApp(getAppFromSearch(window.location?.search || ''), false);
   });
 }
 
@@ -2392,6 +2474,12 @@ foodForm.addEventListener('submit', async (event) => {
 });
 
 foodCatalogEl.addEventListener('click', (event) => {
+  const deleteButton = event.target.closest('[data-food-delete-id]');
+  if (deleteButton) {
+    void removeFoodFromCatalog(deleteButton.dataset.foodDeleteId);
+    return;
+  }
+
   const editButton = event.target.closest('[data-food-edit-id]');
   if (editButton) {
     startFoodEdit(editButton.dataset.foodEditId);
@@ -2440,6 +2528,12 @@ foodMenuPages.addEventListener('click', (event) => {
 });
 
 foodMenuPage.addEventListener('click', (event) => {
+  const deleteButton = event.target.closest('[data-food-delete-id]');
+  if (deleteButton) {
+    void removeFoodFromCatalog(deleteButton.dataset.foodDeleteId);
+    return;
+  }
+
   const editButton = event.target.closest('[data-food-edit-id]');
   if (editButton) {
     startFoodEdit(editButton.dataset.foodEditId);
@@ -3009,7 +3103,7 @@ renderStockList();
 renderBudgetView();
 populateInventoryFoodSelects();
 renderWeekHeader();
-setActiveView('overview');
+setActiveView(document.body?.dataset.activeApp === 'budget' ? 'budget-overview' : 'overview');
 loadSupercategoryOptions();
 loadFoodCatalog();
 loadSavedWeeklyPlans();
@@ -3036,6 +3130,8 @@ if (typeof module !== 'undefined' && module.exports) {
     getInventoryStep,
     getInventorySummary,
     buildFoodSubmissionPayload,
+    buildFoodDeletionConfirmation,
+    getAppFromSearch,
     weekPlanData
   };
 }

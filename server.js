@@ -573,6 +573,7 @@ app.get('/api/foods', async (req, res) => {
       supabaseAdmin
         .from('foods')
         .select('id, name, is_active, supercategory_id, category_id, subcategory_id, created_at')
+        .eq('is_active', true)
         .order('name', { ascending: true }),
       supabaseAdmin
         .from('food_categories')
@@ -800,6 +801,65 @@ async function saveFood(req, res, foodId = null) {
 
 app.post('/api/foods', (req, res) => saveFood(req, res));
 app.put('/api/foods/:id', (req, res) => saveFood(req, res, req.params.id));
+
+app.delete('/api/foods/:id', async (req, res) => {
+  const foodId = String(req.params.id || '').trim();
+  if (!/^[1-9]\d*$/.test(foodId)) {
+    return res.status(400).json({ ok: false, message: 'Neplatné ID jídla.' });
+  }
+
+  if (!supabaseAdmin) {
+    return res.status(503).json({ ok: false, message: 'Chybí konfigurace Supabase.' });
+  }
+
+  const authorizationHeader = req.headers.authorization || '';
+  const accessToken = authorizationHeader.startsWith('Bearer ') ? authorizationHeader.slice(7) : '';
+  if (!accessToken) {
+    return res.status(401).json({ ok: false, message: 'Chybí přístupový token.' });
+  }
+
+  try {
+    const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(accessToken);
+    if (userError || !user?.email) {
+      return res.status(403).json({ ok: false, message: 'Neplatná nebo vypršelá relace.' });
+    }
+
+    const { data: invite, error: inviteError } = await supabaseAdmin
+      .from('access_invites')
+      .select('id')
+      .eq('email', user.email.trim().toLowerCase())
+      .eq('is_active', true)
+      .maybeSingle();
+
+    if (inviteError) {
+      throw inviteError;
+    }
+    if (!invite) {
+      return res.status(403).json({ ok: false, message: 'Váš e-mail není na seznamu pozvaných uživatelů.' });
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('foods')
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq('id', foodId)
+      .eq('is_active', true)
+      .select('id')
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+
+    if (!data) {
+      return res.status(404).json({ ok: false, message: 'Jídlo už v katalogu není.' });
+    }
+
+    return res.json({ ok: true, deleted: true });
+  } catch (error) {
+    console.error('Chyba při odebírání jídla z katalogu:', error);
+    return res.status(500).json({ ok: false, message: 'Nepodařilo se odebrat jídlo z katalogu.', details: error.message || 'Neznámá chyba databáze.' });
+  }
+});
 
 app.get('/api/weekly-plans', async (req, res) => {
   if (!supabaseAdmin) {

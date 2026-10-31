@@ -474,6 +474,7 @@
             detectSessionInUrl: true
           }
         });
+        window.foodPlannerSupabase = supabase;
 
         supabase.auth.onAuthStateChange((event) => {
           if (event === 'PASSWORD_RECOVERY') {

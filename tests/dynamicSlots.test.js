@@ -89,6 +89,7 @@ const {
   getInventoryStep,
   getInventorySummary,
   buildFoodSubmissionPayload,
+  buildFoodDeletionConfirmation,
   getAppFromSearch,
   weekPlanData
 } = require('../app.js');
@@ -97,6 +98,22 @@ test('část aplikace se určí z parametru URL', () => {
   assert.equal(getAppFromSearch('?app=budget'), 'budget');
   assert.equal(getAppFromSearch('?app=food'), 'foodplanner');
   assert.equal(getAppFromSearch(''), 'foodplanner');
+});
+
+test('potvrzení odebrání vypíše celý název a všechny úrovně kategorií', () => {
+  assert.equal(buildFoodDeletionConfirmation({
+    name: 'Kuřecí kari',
+    supercategory: 'Hlavní jídla',
+    category: 'Rýže',
+    subcategory: 'S kuřetem'
+  }), [
+    'Opravdu chcete odebrat toto jídlo z katalogu?',
+    '',
+    'Název: Kuřecí kari',
+    'Nadkategorie: Hlavní jídla',
+    'Kategorie: Rýže',
+    'Podkategorie: S kuřetem'
+  ].join('\n'));
 });
 
 test('výchozí plán má jeden slot v každé základní kategorii a je prázdný', () => {

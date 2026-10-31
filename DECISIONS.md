@@ -10,6 +10,11 @@ Tento soubor je hlavním zdrojem pravdy o projektu. Všechny důležité rozhodn
 
 ## 2. Rozhodnutí k projektu
 
+### 2026-10-28 – Odebrání jídla z katalogu
+- Rozhodnutí: Jídlo lze odebrat z katalogu po potvrzení, které zobrazí jeho název, nadkategorii, kategorii a podkategorii. Odebrání nastaví `is_active` na `false` místo fyzického smazání.
+- Kontext: Uživatel požádal o možnost smazání jídla a potvrzovací okno s úplným zařazením.
+- Důvod: Týdenní plány odkazují na jídla s omezením `ON DELETE RESTRICT`; archivace skryje jídlo z katalogu a výběrů, ale zachová historické plány.
+
 ### 2026-10-04 – Zachování zvoleného modulu v URL
 - Rozhodnutí: Volba mezi Food Plannerem a Budget Plannerem se ukládá do parametru URL `app=food` nebo `app=budget`; modul se obnoví po načtení stránky a reaguje na navigaci zpět/vpřed.
 - Kontext: Uživatel požádal, aby po obnovení stránky zůstala otevřená stejná část aplikace.

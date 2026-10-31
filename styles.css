@@ -691,6 +691,12 @@ button {
   color: var(--muted);
 }
 
+.food-item-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
 .compact li {
   padding: 8px 10px;
 }
@@ -971,6 +977,11 @@ button {
   }
 
   .food-menu-dishes li button {
+    grid-row: 1 / span 2;
+    grid-column: 2;
+  }
+
+  .food-menu-dishes li .food-item-actions {
     grid-row: 1 / span 2;
     grid-column: 2;
   }
