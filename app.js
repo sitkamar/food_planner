@@ -669,17 +669,11 @@ function buildVisibleWeekWindow(baseStartDate) {
     ? getStartOfWeek(baseStartDate)
     : getStartOfWeek(new Date(`${baseStartDate}T00:00:00`));
 
-  const nextWeekDate = new Date(referenceDate);
-  nextWeekDate.setDate(referenceDate.getDate() + 7);
-
-  const nextNextWeekDate = new Date(referenceDate);
-  nextNextWeekDate.setDate(referenceDate.getDate() + 14);
-
-  return [
-    createEmptyWeek(formatISODate(referenceDate)),
-    createEmptyWeek(formatISODate(nextWeekDate)),
-    createEmptyWeek(formatISODate(nextNextWeekDate))
-  ];
+  return Array.from({ length: 4 }, (_, weekIndex) => {
+    const weekDate = new Date(referenceDate);
+    weekDate.setDate(referenceDate.getDate() + (weekIndex * 7));
+    return createEmptyWeek(formatISODate(weekDate));
+  });
 }
 
 function shiftVisibleWeeks(weeks, offsetWeeks) {
@@ -798,6 +792,7 @@ const foodSubcategoryToggle = document.getElementById('foodSubcategoryToggle');
 const foodFormTitle = document.getElementById('foodFormTitle');
 const foodSubmitButton = document.getElementById('foodSubmitButton');
 const cancelFoodEditButton = document.getElementById('cancelFoodEditButton');
+const foodCopyButton = document.getElementById('foodCopyButton');
 const foodSortSelect = document.getElementById('foodSort');
 const foodCatalogListPane = document.getElementById('foodCatalogListPane');
 const foodMenuPane = document.getElementById('foodMenuPane');
@@ -933,6 +928,8 @@ async function loadFoodCatalog() {
     payload.items.forEach((item) => foodCatalog.push({
       id: item.id,
       name: item.name,
+      sourceId: item.sourceId ?? item.source_id ?? '',
+      sourceName: item.sourceName || item.source_name || '',
       supercategory: item.supercategory,
       foodType: item.foodType || item.supercategory,
       category: item.category,
@@ -994,6 +991,14 @@ function escapeFoodOption(value) {
   })[character]);
 }
 
+function isFoodSourceYes(food) {
+  return food?.sourceName === 'Ano';
+}
+
+function renderFoodSourceMark(food) {
+  return isFoodSourceYes(food) ? '<span class="food-source-mark" aria-label="Zdroj Ano">✽</span>' : '';
+}
+
 function sortFoodItems(items) {
   const sortMode = foodSortSelect?.value || 'name';
   return [...items].sort((first, second) => {
@@ -1036,6 +1041,7 @@ function renderFoodList(foods) {
             <small>${classification} · Přidáno ${formatFoodDate(food.createdAt)}</small>
           </div>
           <div class="food-item-actions">
+            <button class="food-source-toggle${isFoodSourceYes(food) ? ' is-yes' : ' is-no'}" type="button" data-food-source-id="${escapeFoodOption(food.id)}" aria-label="Zdroj jídla ${isFoodSourceYes(food) ? 'Ano' : 'Ne'}, přepnout pro ${foodName}" title="Přepnout zdroj mezi Ano a Ne" aria-pressed="${isFoodSourceYes(food)}">✽</button>
             <button class="secondary" type="button" data-food-edit-id="${escapeFoodOption(food.id)}" aria-label="Upravit ${foodName}">Upravit</button>
             <button class="secondary" type="button" data-food-delete-id="${escapeFoodOption(food.id)}" aria-label="Odebrat ${foodName} (${classification})">Odebrat</button>
           </div>
@@ -1086,9 +1092,10 @@ function renderFoodMenu(foods) {
         <ul class="food-menu-dishes">
           ${categoryGroups.get(category).map((food) => `
             <li>
-              <span class="food-menu-dish-name">${escapeFoodOption(food.name || 'Bez názvu')}</span>
+              <span class="food-menu-dish-name">${escapeFoodOption(food.name || 'Bez názvu')}${renderFoodSourceMark(food)}</span>
               ${food.subcategory ? `<span class="food-menu-dish-subcategory">(${escapeFoodOption(food.subcategory)})</span>` : ''}
               <div class="food-item-actions">
+                <button class="food-source-toggle${isFoodSourceYes(food) ? ' is-yes' : ' is-no'}" type="button" data-food-source-id="${escapeFoodOption(food.id)}" aria-label="Zdroj jídla ${isFoodSourceYes(food) ? 'Ano' : 'Ne'}, přepnout pro ${escapeFoodOption(food.name || 'jídlo')}" title="Přepnout zdroj mezi Ano a Ne" aria-pressed="${isFoodSourceYes(food)}">✽</button>
                 <button class="secondary" type="button" data-food-edit-id="${escapeFoodOption(food.id)}" aria-label="Upravit ${escapeFoodOption(food.name || 'jídlo')}">Upravit</button>
                 <button class="secondary" type="button" data-food-delete-id="${escapeFoodOption(food.id)}" aria-label="Odebrat ${escapeFoodOption(food.name || 'jídlo')} (${escapeFoodOption([food.supercategory, food.category, food.subcategory].filter(Boolean).join(' · '))})">Odebrat</button>
               </div>
@@ -1164,6 +1171,42 @@ async function removeFoodFromCatalog(foodId) {
   } catch (error) {
     console.error('Chyba při odebírání jídla z katalogu:', error);
     window.alert(error.message || 'Nepodařilo se odebrat jídlo z katalogu.');
+  }
+}
+
+async function toggleFoodSource(foodId) {
+  const food = foodCatalog.find((item) => String(item.id) === String(foodId));
+  if (!food) {
+    return;
+  }
+
+  try {
+    const { data: { session } = {}, error: sessionError } = await window.foodPlannerSupabase?.auth.getSession() || {};
+    if (sessionError || !session?.access_token) {
+      throw new Error('Přihlášení vypršelo. Přihlaste se znovu.');
+    }
+
+    const response = await fetch(`/api/foods/${encodeURIComponent(food.id)}/source`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`
+      },
+      body: JSON.stringify({ is_source: !isFoodSourceYes(food) })
+    });
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      throw new Error(result.message || 'Nepodařilo se změnit zdroj jídla.');
+    }
+
+    food.sourceId = result.item.sourceId;
+    food.sourceName = result.item.sourceName;
+    renderFoodCatalog();
+    renderWeekPlan();
+  } catch (error) {
+    console.error('Chyba při změně zdroje jídla:', error);
+    window.alert(error.message || 'Nepodařilo se změnit zdroj jídla.');
   }
 }
 
@@ -1270,6 +1313,8 @@ function resetFoodForm() {
   foodFormTitle.textContent = 'Přidat nové jídlo';
   foodSubmitButton.textContent = 'Přidat do katalogu';
   cancelFoodEditButton.classList.add('hidden');
+  foodCopyButton?.classList.add('hidden');
+  populateFoodSourceOptions();
 
   const defaultSupercategory = availableSupercategories[0]?.name || 'Hlavní jídlo';
   if (foodSupercategorySelect) {
@@ -1287,12 +1332,14 @@ function startFoodEdit(foodId) {
 
   foodIdInput.value = String(food.id);
   foodNameInput.value = food.name || '';
+  populateFoodSourceOptions(food.sourceId, false);
   foodSupercategorySelect.value = food.supercategory || '';
   foodCategoryInput.value = food.category || '';
   foodSubcategoryInput.value = food.subcategory || '';
   foodFormTitle.textContent = 'Upravit jídlo';
   foodSubmitButton.textContent = 'Uložit změny';
   cancelFoodEditButton.classList.remove('hidden');
+  foodCopyButton?.classList.remove('hidden');
   refreshFoodTaxonomyOptions();
   foodNameInput.focus();
 }
@@ -1972,7 +2019,7 @@ function renderWeekPlan() {
                 return `
                   <div class="slot-row slot-row-filled" data-week-start="${week.startDate}" data-slot-key="${slotKey}" tabindex="0" role="button">
                     <span class="slot-row-text">
-                      ${group.key === 'main' && selectedMeta.supercategory && selectedMeta.supercategory !== selectedMeta.category ? itemLabelWithSuper : itemLabel}
+                      ${group.key === 'main' && selectedMeta.supercategory && selectedMeta.supercategory !== selectedMeta.category ? itemLabelWithSuper : itemLabel}${renderFoodSourceMark(selectedFood)}
                     </span>
                     <button class="icon-row-btn" type="button" data-week-start="${week.startDate}" data-slot-key="${slotKey}" aria-label="Odebrat jídlo">×</button>
                   </div>
@@ -2125,7 +2172,7 @@ function renderFoodPickerResults(foods, selectedValue) {
       return `
         <button class="food-picker-item" type="button" data-food-name="${foodName}" data-food-id="${escapeFoodOption(food.id ?? '')}">
           <div>
-            <strong>${foodName}</strong>
+            <strong>${foodName}${renderFoodSourceMark(food)}</strong>
             <small>${escapeFoodOption(getFoodMeta(food).label)}</small>
           </div>
           ${isSelected ? '<span class="ghost-btn">Vybráno</span>' : ''}
@@ -2165,7 +2212,7 @@ function renderFoodPickerResults(foods, selectedValue) {
         <ul class="food-menu-dishes">
           ${categoryGroups.get(category).map((food) => `
             <li>
-              <span class="food-menu-dish-name">${escapeFoodOption(food.name || 'Bez názvu')}</span>
+              <span class="food-menu-dish-name">${escapeFoodOption(food.name || 'Bez názvu')}${renderFoodSourceMark(food)}</span>
               ${food.subcategory ? `<span class="food-menu-dish-subcategory">(${escapeFoodOption(food.subcategory)})</span>` : ''}
               <button class="secondary" type="button" data-food-name="${escapeFoodOption(food.name || '')}" data-food-id="${escapeFoodOption(food.id ?? '')}" aria-label="Vybrat ${escapeFoodOption(food.name || 'jídlo')}">${selectedValue === food.name ? 'Vybráno' : 'Vybrat'}</button>
             </li>
@@ -2397,7 +2444,8 @@ if (typeof window !== 'undefined' && typeof window.fetch === 'function') {
 foodForm.addEventListener('submit', async (event) => {
   event.preventDefault();
 
-  const editingFoodId = foodIdInput.value;
+  const createCopy = event.submitter?.id === 'foodCopyButton';
+  const editingFoodId = createCopy ? '' : foodIdInput.value;
   const name = foodNameInput.value.trim();
   const supercategory = foodSupercategorySelect?.value.trim() || 'Hlavní jídlo';
   const selectedSupercategoryOption = foodSupercategorySelect?.selectedOptions?.[0];
@@ -2446,6 +2494,8 @@ foodForm.addEventListener('submit', async (event) => {
     const normalizedFood = {
       id: savedFood.id,
       name: savedFood.name,
+      sourceId: savedFood.sourceId ?? savedFood.source_id ?? null,
+      sourceName: savedFood.sourceName || savedFood.source_name || '',
       supercategory: savedFood.supercategory || payload.supercategory,
       foodType: savedFood.foodType || savedFood.food_type_name || payload.food_type_name || payload.supercategory,
       category: savedFood.category || payload.category,
@@ -2474,6 +2524,12 @@ foodForm.addEventListener('submit', async (event) => {
 });
 
 foodCatalogEl.addEventListener('click', (event) => {
+  const sourceButton = event.target.closest('[data-food-source-id]');
+  if (sourceButton) {
+    void toggleFoodSource(sourceButton.dataset.foodSourceId);
+    return;
+  }
+
   const deleteButton = event.target.closest('[data-food-delete-id]');
   if (deleteButton) {
     void removeFoodFromCatalog(deleteButton.dataset.foodDeleteId);
@@ -2528,6 +2584,12 @@ foodMenuPages.addEventListener('click', (event) => {
 });
 
 foodMenuPage.addEventListener('click', (event) => {
+  const sourceButton = event.target.closest('[data-food-source-id]');
+  if (sourceButton) {
+    void toggleFoodSource(sourceButton.dataset.foodSourceId);
+    return;
+  }
+
   const deleteButton = event.target.closest('[data-food-delete-id]');
   if (deleteButton) {
     void removeFoodFromCatalog(deleteButton.dataset.foodDeleteId);
@@ -3130,6 +3192,7 @@ if (typeof module !== 'undefined' && module.exports) {
     getInventoryStep,
     getInventorySummary,
     buildFoodSubmissionPayload,
+    isFoodSourceYes,
     buildFoodDeletionConfirmation,
     getAppFromSearch,
     weekPlanData

@@ -10,6 +10,16 @@ Tento soubor je hlavním zdrojem pravdy o projektu. Všechny důležité rozhodn
 
 ## 2. Rozhodnutí k projektu
 
+### 2026-11-01 – Přepínací příznak zdroje jídla
+- Rozhodnutí: Zdroj jídla je příznak `Ano/Ne`, výchozí hodnota je `Ne`. Katalog nabízí přepínací symbol `✽`; zelený symbol se zobrazuje v plánovacím výběru a plánu pouze pro `Ano`. Původní hodnoty `Uživatel` a `TikTok` se při migraci převedou na `Ne` a `Ano`.
+- Kontext: Uživatel změnil požadavek na původní výběr zdroje při vytváření jídla na jednoduchý přepínací příznak.
+- Důvod: Příznak se dá měnit kdykoli v katalogu bez editace jídla a nové záznamy mají bezpečný databázový výchozí stav.
+
+### 2026-10-31 – Čtyřtýdenní plán a zdroj jídla
+- Rozhodnutí: Plán zobrazuje čtyři po sobě jdoucí týdny. Jídla mají volitelný odkaz na normalizovaný zdroj v tabulce `food_sources`, která začíná hodnotami `Uživatel` a `TikTok`; kopie editovaného jídla se ukládá jako nový záznam z aktuálních hodnot formuláře.
+- Kontext: Uživatel požádal o čtvrtý týden dopředu, zjednodušené vytváření jídel podle existujícího jídla a evidenci jejich původu.
+- Důvod: Samostatná tabulka umožní rozšiřovat zdroje bez změny schématu. U starších jídel zůstane zdroj neurčený, protože jej nelze bezpečně odvodit z názvu ani kategorií.
+
 ### 2026-10-28 – Odebrání jídla z katalogu
 - Rozhodnutí: Jídlo lze odebrat z katalogu po potvrzení, které zobrazí jeho název, nadkategorii, kategorii a podkategorii. Odebrání nastaví `is_active` na `false` místo fyzického smazání.
 - Kontext: Uživatel požádal o možnost smazání jídla a potvrzovací okno s úplným zařazením.

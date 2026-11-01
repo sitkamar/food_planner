@@ -89,6 +89,7 @@ const {
   getInventoryStep,
   getInventorySummary,
   buildFoodSubmissionPayload,
+  isFoodSourceYes,
   buildFoodDeletionConfirmation,
   getAppFromSearch,
   weekPlanData
@@ -114,6 +115,12 @@ test('potvrzení odebrání vypíše celý název a všechny úrovně kategorií
     'Kategorie: Rýže',
     'Podkategorie: S kuřetem'
   ].join('\n'));
+});
+
+test('příznak Ano se rozpozná jako zdrojová značka a Ne ji nezobrazí', () => {
+  assert.equal(isFoodSourceYes({ sourceName: 'Ano' }), true);
+  assert.equal(isFoodSourceYes({ sourceName: 'Ne' }), false);
+  assert.equal(isFoodSourceYes({ sourceName: '' }), false);
 });
 
 test('výchozí plán má jeden slot v každé základní kategorii a je prázdný', () => {
@@ -292,14 +299,16 @@ test('posun zobrazených týdnů o jeden týden mění všechna data o +7 dní',
   assert.deepEqual(weeks.map((week) => week.startDate), [
     '2026-09-21',
     '2026-09-28',
-    '2026-10-05'
+    '2026-10-05',
+    '2026-10-12'
   ]);
 
   const shifted = shiftVisibleWeeks(weeks, 1);
   assert.deepEqual(shifted.map((week) => week.startDate), [
     '2026-09-28',
     '2026-10-05',
-    '2026-10-12'
+    '2026-10-12',
+    '2026-10-19'
   ]);
 });
 
@@ -398,7 +407,8 @@ test('předchozí tlačítko posouvá zobrazené týdny od levého aktuálního 
   assert.deepEqual(weekPlanData.map((week) => week.startDate), [
     '2026-09-14',
     '2026-09-21',
-    '2026-09-28'
+    '2026-09-28',
+    '2026-10-05'
   ]);
 });
 

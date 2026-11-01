@@ -25,7 +25,7 @@ const supabaseAdmin = supabaseUrl && supabaseServiceRoleKey
     })
   : null;
 
-function normalizeFoodRow(row, categoryMap, supercategoryMap, subcategoryMap, typeMap) {
+function normalizeFoodRow(row, categoryMap, supercategoryMap, subcategoryMap, typeMap, sourceMap) {
   const categoryEntry = categoryMap.get(row.category_id) || { name: row.category_name || 'Neurčeno', supercategory_id: row.supercategory_id || null };
   const resolvedSupercategoryId = row.supercategory_id || categoryEntry.supercategory_id || null;
   const supercategoryMeta = supercategoryMap.get(resolvedSupercategoryId) || { name: row.supercategory_name || 'Neurčeno', food_type_id: null };
@@ -33,10 +33,13 @@ function normalizeFoodRow(row, categoryMap, supercategoryMap, subcategoryMap, ty
   const category = categoryEntry.name || row.category_name || 'Neurčeno';
   const subcategory = subcategoryMap.get(row.subcategory_id) || row.subcategory_name || null;
   const foodType = typeMap.get(supercategoryMeta.food_type_id) || row.food_type_name || supercategory;
+  const source = sourceMap.get(row.source_id) || null;
 
   return {
     id: row.id,
     name: row.name,
+    sourceId: row.source_id,
+    sourceName: source?.name || '',
     is_active: row.is_active,
     createdAt: row.created_at,
     supercategory,
@@ -569,10 +572,10 @@ function inferFoodTypeName(supercategoryName = '') {
 
 app.get('/api/foods', async (req, res) => {
   try {
-    const [foodsResult, categoriesResult, supercategoriesResult, subcategoriesResult, typesResult] = await Promise.all([
+    const [foodsResult, categoriesResult, supercategoriesResult, subcategoriesResult, typesResult, sourcesResult] = await Promise.all([
       supabaseAdmin
         .from('foods')
-        .select('id, name, is_active, supercategory_id, category_id, subcategory_id, created_at')
+        .select('id, name, is_active, supercategory_id, category_id, subcategory_id, source_id, created_at')
         .eq('is_active', true)
         .order('name', { ascending: true }),
       supabaseAdmin
@@ -586,7 +589,11 @@ app.get('/api/foods', async (req, res) => {
         .select('id, name'),
       supabaseAdmin
         .from('food_types')
+        .select('id, name'),
+      supabaseAdmin
+        .from('food_sources')
         .select('id, name')
+        .order('name', { ascending: true })
     ]);
 
     const foodsError = foodsResult.error;
@@ -594,9 +601,10 @@ app.get('/api/foods', async (req, res) => {
     const supercategoriesError = supercategoriesResult.error;
     const subcategoriesError = subcategoriesResult.error;
     const typesError = typesResult.error;
+    const sourcesError = sourcesResult.error;
 
-    if (foodsError || categoriesError || supercategoriesError || subcategoriesError || typesError) {
-      throw foodsError || categoriesError || supercategoriesError || subcategoriesError || typesError;
+    if (foodsError || categoriesError || supercategoriesError || subcategoriesError || typesError || sourcesError) {
+      throw foodsError || categoriesError || supercategoriesError || subcategoriesError || typesError || sourcesError;
     }
 
     const categoryMap = new Map((categoriesResult.data || []).map((category) => [category.id, {
@@ -609,11 +617,13 @@ app.get('/api/foods', async (req, res) => {
     }]));
     const subcategoryMap = new Map((subcategoriesResult.data || []).map((subcategory) => [subcategory.id, subcategory.name]));
     const typeMap = new Map((typesResult.data || []).map((type) => [type.id, type.name]));
+    const sourceMap = new Map((sourcesResult.data || []).map((source) => [source.id, source]));
 
-    const items = (foodsResult.data || []).map((row) => normalizeFoodRow(row, categoryMap, supercategoryMap, subcategoryMap, typeMap));
+    const items = (foodsResult.data || []).map((row) => normalizeFoodRow(row, categoryMap, supercategoryMap, subcategoryMap, typeMap, sourceMap));
 
     res.json({
       items,
+      sources: sourcesResult.data || [],
       count: items.length
     });
   } catch (error) {
@@ -765,7 +775,7 @@ async function saveFood(req, res, foodId = null) {
     }
 
     const { data: savedFood, error: saveFoodError } = await foodSaveQuery
-      .select('id, name, is_active, supercategory_id, category_id, subcategory_id, created_at')
+      .select('id, name, is_active, supercategory_id, category_id, subcategory_id, source_id, created_at')
       .maybeSingle();
 
     if (saveFoodError) {
@@ -776,9 +786,21 @@ async function saveFood(req, res, foodId = null) {
       return res.status(404).json({ ok: false, message: 'Upravované jídlo už v katalogu neexistuje.' });
     }
 
+    const { data: sourceRow, error: sourceError } = await supabaseAdmin
+      .from('food_sources')
+      .select('name')
+      .eq('id', savedFood.source_id)
+      .maybeSingle();
+
+    if (sourceError) {
+      throw sourceError;
+    }
+
     const item = {
       id: savedFood.id,
       name: savedFood.name,
+      sourceId: savedFood.source_id,
+      sourceName: sourceRow?.name || '',
       createdAt: savedFood.created_at,
       supercategory: normalizedSupercategory,
       category: normalizedCategory,
@@ -802,26 +824,24 @@ async function saveFood(req, res, foodId = null) {
 app.post('/api/foods', (req, res) => saveFood(req, res));
 app.put('/api/foods/:id', (req, res) => saveFood(req, res, req.params.id));
 
-app.delete('/api/foods/:id', async (req, res) => {
-  const foodId = String(req.params.id || '').trim();
-  if (!/^[1-9]\d*$/.test(foodId)) {
-    return res.status(400).json({ ok: false, message: 'Neplatné ID jídla.' });
-  }
-
+async function authorizeFoodMutation(req, res) {
   if (!supabaseAdmin) {
-    return res.status(503).json({ ok: false, message: 'Chybí konfigurace Supabase.' });
+    res.status(503).json({ ok: false, message: 'Chybí konfigurace Supabase.' });
+    return false;
   }
 
   const authorizationHeader = req.headers.authorization || '';
   const accessToken = authorizationHeader.startsWith('Bearer ') ? authorizationHeader.slice(7) : '';
   if (!accessToken) {
-    return res.status(401).json({ ok: false, message: 'Chybí přístupový token.' });
+    res.status(401).json({ ok: false, message: 'Chybí přístupový token.' });
+    return false;
   }
 
   try {
     const { data: { user }, error: userError } = await supabaseAdmin.auth.getUser(accessToken);
     if (userError || !user?.email) {
-      return res.status(403).json({ ok: false, message: 'Neplatná nebo vypršelá relace.' });
+      res.status(403).json({ ok: false, message: 'Neplatná nebo vypršelá relace.' });
+      return false;
     }
 
     const { data: invite, error: inviteError } = await supabaseAdmin
@@ -835,9 +855,29 @@ app.delete('/api/foods/:id', async (req, res) => {
       throw inviteError;
     }
     if (!invite) {
-      return res.status(403).json({ ok: false, message: 'Váš e-mail není na seznamu pozvaných uživatelů.' });
+      res.status(403).json({ ok: false, message: 'Váš e-mail není na seznamu pozvaných uživatelů.' });
+      return false;
     }
 
+    return true;
+  } catch (error) {
+    console.error('Chyba při ověřování přístupu ke změně katalogu:', error);
+    res.status(500).json({ ok: false, message: 'Nepodařilo se ověřit přístup.' });
+    return false;
+  }
+}
+
+app.delete('/api/foods/:id', async (req, res) => {
+  const foodId = String(req.params.id || '').trim();
+  if (!/^[1-9]\d*$/.test(foodId)) {
+    return res.status(400).json({ ok: false, message: 'Neplatné ID jídla.' });
+  }
+
+  if (!await authorizeFoodMutation(req, res)) {
+    return;
+  }
+
+  try {
     const { data, error } = await supabaseAdmin
       .from('foods')
       .update({ is_active: false, updated_at: new Date().toISOString() })
@@ -858,6 +898,55 @@ app.delete('/api/foods/:id', async (req, res) => {
   } catch (error) {
     console.error('Chyba při odebírání jídla z katalogu:', error);
     return res.status(500).json({ ok: false, message: 'Nepodařilo se odebrat jídlo z katalogu.', details: error.message || 'Neznámá chyba databáze.' });
+  }
+});
+
+app.patch('/api/foods/:id/source', async (req, res) => {
+  const foodId = String(req.params.id || '').trim();
+  if (!/^[1-9]\d*$/.test(foodId)) {
+    return res.status(400).json({ ok: false, message: 'Neplatné ID jídla.' });
+  }
+  if (typeof req.body?.is_source !== 'boolean') {
+    return res.status(400).json({ ok: false, message: 'Nový stav zdroje jídla není platný.' });
+  }
+  if (!await authorizeFoodMutation(req, res)) {
+    return;
+  }
+
+  try {
+    const sourceName = req.body.is_source ? 'Ano' : 'Ne';
+    const { data: source, error: sourceError } = await supabaseAdmin
+      .from('food_sources')
+      .select('id, name')
+      .eq('name', sourceName)
+      .single();
+
+    if (sourceError) {
+      throw sourceError;
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('foods')
+      .update({ source_id: source.id, updated_at: new Date().toISOString() })
+      .eq('id', foodId)
+      .eq('is_active', true)
+      .select('id')
+      .maybeSingle();
+
+    if (error) {
+      throw error;
+    }
+    if (!data) {
+      return res.status(404).json({ ok: false, message: 'Jídlo už v katalogu není.' });
+    }
+
+    return res.json({
+      ok: true,
+      item: { sourceId: source.id, sourceName: source.name }
+    });
+  } catch (error) {
+    console.error('Chyba při změně zdroje jídla:', error);
+    return res.status(500).json({ ok: false, message: 'Nepodařilo se změnit zdroj jídla.', details: error.message || 'Neznámá chyba databáze.' });
   }
 });
 

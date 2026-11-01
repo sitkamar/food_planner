@@ -697,6 +697,29 @@ button {
   gap: 8px;
 }
 
+.food-source-toggle {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: #111;
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.food-source-toggle.is-yes,
+.food-source-mark {
+  color: #16803c;
+}
+
+.food-source-mark {
+  display: inline-block;
+  margin-left: 5px;
+  font-weight: 700;
+}
+
 .compact li {
   padding: 8px 10px;
 }
@@ -778,6 +801,12 @@ button {
 
 .food-menu-dish-name {
   min-width: 0;
+}
+
+.food-menu-dish-name small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.76rem;
 }
 
 .food-menu-dish-subcategory {
