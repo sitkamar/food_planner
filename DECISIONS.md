@@ -10,6 +10,11 @@ Tento soubor je hlavním zdrojem pravdy o projektu. Všechny důležité rozhodn
 
 ## 2. Rozhodnutí k projektu
 
+### 2026-11-15 – Zachování načtených týdnů při posunu plánu
+- Rozhodnutí: Při posunu čtyřtýdenního okna se zachovají již načtené týdny, které jsou viditelné i v novém okně. Plánová jídla se zobrazí i tehdy, když už nejsou v aktivním katalogu. Načítání celého okna proběhne jedním požadavkem a starší odpověď nesmí přepsat novější zobrazení.
+- Kontext: Týden začínající 16. 11. se v okně od 2. 11. zobrazoval správně, ale po posunu nebo návratu tlačítkem „Dnes“ se plán nevykreslil, pokud jídlo nešlo najít v aktivním katalogu. Načítání čtyř týdnů samostatnými požadavky navíc zpomalovalo navigaci a umožňovalo souběh zastaralých odpovědí.
+- Důvod: Týden je identifikován datem pondělí a jeho obsah nesmí záviset na pozici ve čtyřtýdenním okně ani na aktuálním stavu katalogu. Zachování překryvu, bezpečné vykreslení a řízení souběhu udrží plán viditelný při navigaci.
+
 ### 2026-11-01 – Přepínací příznak zdroje jídla
 - Rozhodnutí: Zdroj jídla je příznak `Ano/Ne`, výchozí hodnota je `Ne`. Katalog nabízí přepínací symbol `✽`; zelený symbol se zobrazuje v plánovacím výběru a plánu pouze pro `Ano`. Původní hodnoty `Uživatel` a `TikTok` se při migraci převedou na `Ne` a `Ano`.
 - Kontext: Uživatel změnil požadavek na původní výběr zdroje při vytváření jídla na jednoduchý přepínací příznak.

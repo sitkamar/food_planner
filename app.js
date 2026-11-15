@@ -570,6 +570,8 @@ async function saveWeekPlan(week) {
   }
 }
 
+let weeklyPlanRequestId = 0;
+
 async function fetchWeeklyPlansForDates(weekDates = [], targetWeeks = weekPlanData) {
   const dates = Array.from(new Set((weekDates || []).filter(Boolean)));
 
@@ -577,35 +579,32 @@ async function fetchWeeklyPlansForDates(weekDates = [], targetWeeks = weekPlanDa
     return [];
   }
 
+  const requestId = ++weeklyPlanRequestId;
+  const targetDates = new Set(dates);
+
   try {
-    const results = await Promise.all(
-      dates.map(async (startDate) => {
-        const response = await fetch(`/api/weekly-plans?week_start_date=${encodeURIComponent(startDate)}`);
-        const payload = await response.json();
+    const response = await fetch(`/api/weekly-plans?week_start_dates=${encodeURIComponent(dates.join(','))}`);
+    const payload = await response.json();
 
-        if (!response.ok) {
-          throw new Error(payload.message || 'Nepodařilo se načíst týdenní plán.');
-        }
+    if (!response.ok) {
+      throw new Error(payload.message || 'Nepodařilo se načíst týdenní plán.');
+    }
 
-        return Array.isArray(payload.items) ? payload.items : [];
-      })
-    );
+    if (requestId !== weeklyPlanRequestId) {
+      return [];
+    }
 
-    const merged = results.flat();
-    hydrateSavedWeekData(merged, targetWeeks);
+    const savedWeeks = (Array.isArray(payload.items) ? payload.items : [])
+      .filter((week) => targetDates.has(week.week_start_date));
+    hydrateSavedWeekData(savedWeeks, targetWeeks);
     renderWeekPlan();
-    return merged;
+    return savedWeeks;
   } catch (error) {
-    console.error('Chyba při načítání uložených plánů:', error);
+    if (requestId === weeklyPlanRequestId) {
+      console.error('Chyba při načítání uložených plánů:', error);
+    }
     return [];
   }
-}
-
-async function loadSavedWeeklyPlans() {
-  return fetchWeeklyPlansForDates(
-    (weekPlanData || []).map((week) => week.startDate),
-    weekPlanData
-  );
 }
 
 function formatISODate(date) {
@@ -686,7 +685,7 @@ function shiftVisibleWeeks(weeks, offsetWeeks) {
     date.setDate(date.getDate() + (offsetWeeks * 7));
 
     const shiftedDate = formatISODate(date);
-    const existingWeek = Array.isArray(globalThis.weekPlanData) && globalThis.weekPlanData.find((item) => item.startDate === shiftedDate);
+    const existingWeek = weeks.find((item) => item.startDate === shiftedDate);
 
     if (existingWeek) {
       return JSON.parse(JSON.stringify(existingWeek));
@@ -741,8 +740,8 @@ function hydrateSavedWeekData(savedWeeks, visibleWeeks = weekPlanData) {
 
 const weekPlanData = buildVisibleWeekWindow(getFirstVisibleWeekStart(new Date()));
 
-function updateVisibleWeekWindow(baseDate) {
-  const nextWindow = buildVisibleWeekWindow(baseDate);
+function updateVisibleWeekWindow(offsetWeeks) {
+  const nextWindow = shiftVisibleWeeks(weekPlanData, offsetWeeks);
   weekPlanData.length = 0;
   weekPlanData.push(...nextWindow);
 
@@ -754,11 +753,7 @@ function updateVisibleWeekWindow(baseDate) {
 }
 
 function moveVisibleWeeks(offsetWeeks) {
-  const currentBaseDate = weekPlanData[0]?.startDate || formatISODate(getStartOfWeek(new Date()));
-  const baseDate = new Date(`${currentBaseDate}T00:00:00`);
-  baseDate.setDate(baseDate.getDate() + (offsetWeeks * 7));
-
-  updateVisibleWeekWindow(baseDate);
+  updateVisibleWeekWindow(offsetWeeks);
 }
 
 function jumpToToday() {
@@ -2013,13 +2008,15 @@ function renderWeekPlan() {
                   || null;
                 const selectedMeta = selectedFood ? getFoodMeta(selectedFood) : null;
 
-                const itemLabel = `${selectedFood.name} - ${selectedMeta.category || selectedMeta.supercategory || 'Kategorie'}`;
-                const itemLabelWithSuper = `${itemLabel}${group.key === 'main' && selectedMeta.supercategory ? `, ${selectedMeta.supercategory}` : ''}`;
+                const itemLabel = selectedFood
+                  ? `${selectedFood.name} - ${selectedMeta.category || selectedMeta.supercategory || 'Kategorie'}`
+                  : currentValue || 'Jídlo není v katalogu';
+                const itemLabelWithSuper = `${itemLabel}${group.key === 'main' && selectedMeta?.supercategory ? `, ${selectedMeta.supercategory}` : ''}`;
 
                 return `
                   <div class="slot-row slot-row-filled" data-week-start="${week.startDate}" data-slot-key="${slotKey}" tabindex="0" role="button">
                     <span class="slot-row-text">
-                      ${group.key === 'main' && selectedMeta.supercategory && selectedMeta.supercategory !== selectedMeta.category ? itemLabelWithSuper : itemLabel}${renderFoodSourceMark(selectedFood)}
+                      ${group.key === 'main' && selectedMeta?.supercategory && selectedMeta.supercategory !== selectedMeta.category ? itemLabelWithSuper : itemLabel}${renderFoodSourceMark(selectedFood)}
                     </span>
                     <button class="icon-row-btn" type="button" data-week-start="${week.startDate}" data-slot-key="${slotKey}" aria-label="Odebrat jídlo">×</button>
                   </div>
@@ -3165,10 +3162,8 @@ renderStockList();
 renderBudgetView();
 populateInventoryFoodSelects();
 renderWeekHeader();
-setActiveView(document.body?.dataset.activeApp === 'budget' ? 'budget-overview' : 'overview');
 loadSupercategoryOptions();
 loadFoodCatalog();
-loadSavedWeeklyPlans();
 
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {

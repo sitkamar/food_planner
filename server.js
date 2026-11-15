@@ -957,13 +957,19 @@ app.get('/api/weekly-plans', async (req, res) => {
 
   try {
     const weekStartDate = String(req.query.week_start_date || '').trim();
+    const weekStartDates = String(req.query.week_start_dates || '')
+      .split(',')
+      .map((date) => date.trim())
+      .filter(Boolean);
 
     const plansQuery = supabaseAdmin
       .from('weekly_plans')
       .select('id, week_start_date')
       .order('week_start_date', { ascending: true });
 
-    if (weekStartDate) {
+    if (weekStartDates.length) {
+      plansQuery.in('week_start_date', weekStartDates);
+    } else if (weekStartDate) {
       plansQuery.eq('week_start_date', weekStartDate);
     }
 

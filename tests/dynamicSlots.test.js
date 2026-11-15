@@ -56,7 +56,7 @@ global.fetch = async (url) => {
     };
   }
 
-  if (url === '/api/weekly-plans') {
+  if (url.startsWith('/api/weekly-plans')) {
     return {
       ok: true,
       json: async () => ({ items: [] })
@@ -410,6 +410,52 @@ test('předchozí tlačítko posouvá zobrazené týdny od levého aktuálního 
     '2026-09-28',
     '2026-10-05'
   ]);
+});
+
+test('při posunu na první pozici zůstane načtený plán týdne 16. listopadu vyplněný', () => {
+  weekPlanData.length = 0;
+  weekPlanData.push(...buildVisibleWeekWindow('2026-11-02'));
+
+  hydrateSavedWeekData([{
+    week_start_date: '2026-11-16',
+    slots: {
+      breakfast: ['breakfast_1'],
+      main: ['main_1'],
+      snack: ['snack_1'],
+      non_cooking: ['non_cooking_1']
+    },
+    items: {
+      breakfast_1: 'Snídaně',
+      main_1: 'Hlavní jídlo',
+      snack_1: 'Svačina',
+      non_cooking_1: 'Nevářící jídlo'
+    }
+  }], weekPlanData);
+
+  moveVisibleWeeks(2);
+
+  assert.equal(weekPlanData[0].startDate, '2026-11-16');
+  assert.equal(weekPlanData[0].items.breakfast_1, 'Snídaně');
+  assert.equal(weekPlanData[0].items.main_1, 'Hlavní jídlo');
+  assert.equal(weekPlanData[0].items.snack_1, 'Svačina');
+  assert.equal(weekPlanData[0].items.non_cooking_1, 'Nevářící jídlo');
+});
+
+test('načtený plán týdne se zobrazuje stejně na každé pozici viditelného okna', () => {
+  const savedWeek = {
+    week_start_date: '2026-11-16',
+    slots: { main: ['main_1'] },
+    items: { main_1: 'Hlavní jídlo' }
+  };
+
+  ['2026-10-26', '2026-11-02', '2026-11-09', '2026-11-16'].forEach((windowStart) => {
+    const weeks = buildVisibleWeekWindow(windowStart);
+    const targetWeek = hydrateSavedWeekData([savedWeek], weeks)
+      .find((week) => week.startDate === '2026-11-16');
+
+    assert.ok(targetWeek);
+    assert.equal(targetWeek.items.main_1, 'Hlavní jídlo');
+  });
 });
 
 test('po posunu do jiného týdne se načtou uložená jídla pro daný týden', () => {
